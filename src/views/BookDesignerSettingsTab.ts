@@ -47,20 +47,6 @@ export class BookDesignerSettingsTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
-			.setName('Automatically refresh preview')
-			.setDesc('Refresh the preview after manuscript changes when loading exists.')
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.autoRefreshPreview)
-					.onChange(async (value) => {
-						await this.plugin.saveSettings({
-							...this.plugin.settings,
-							autoRefreshPreview: value,
-						});
-					}),
-			);
-
-		new Setting(containerEl)
 			.setName('Debug logging')
 			.setDesc('Write optional diagnostics to the developer console.')
 			.addToggle((toggle) =>

@@ -1,42 +1,46 @@
-import { describe, expect, it } from 'vitest';
-import { BookProjectStore, renderPreviewState } from './project-store';
+import { describe, expect, it, vi } from 'vitest';
+import { BookProjectStore, emptyProjectRegistry, renderPreviewState } from './project-store';
 
 describe('BookProjectStore', () => {
-	it('notifies subscribers when design changes', () => {
+	it('keeps the external-store snapshot stable until state changes', () => {
 		const store = new BookProjectStore();
-		let notificationCount = 0;
-		const unsubscribe = store.subscribe(() => {
-			notificationCount += 1;
-		});
+		const initialSnapshot = store.getSnapshot();
+		expect(store.getSnapshot()).toBe(initialSnapshot);
 
-		store.updateDesign({ themeId: 'modern' });
-		unsubscribe();
-		store.updateDesign({ themeId: 'minimal' });
-
-		expect(notificationCount).toBe(1);
+		store.createProject('Books/Novel', 'Novel');
+		expect(store.getSnapshot()).not.toBe(initialSnapshot);
+		expect(store.getSnapshot()).toBe(store.getSnapshot());
 	});
 
-	it('uses one shared state for designer changes and preview rendering', () => {
-		const store = new BookProjectStore();
+	it('persists only project configuration and preserves per-project settings when switching', async () => {
+		const persist = vi.fn(async (_registry: unknown) => undefined);
+		const ids = ['project-a', 'project-b'];
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', persist, () => ids.shift() ?? 'unexpected');
+		store.createProject('Books/Novel', 'Novel');
+		store.updateMetadata({ author: 'Author A' });
+		store.updateDesign({ themeId: 'modern' });
+		store.updatePreview({ readerScale: 120, scrollTop: 48, activeSectionId: 'chapter-a' });
+		store.createProject('Books/Novel', 'Novel');
+		store.updateMetadata({ author: 'Author B' });
+		store.updatePreview({ readerScale: 85 });
+		store.selectProject('project-a');
 
-		store.updateMetadata({
-			title: 'The Test Manuscript',
-			author: 'Rafael Seno',
-		});
-		store.updateDesign({
-			themeId: 'modern',
-			typographyScale: 'spacious',
-			chapterStyleId: 'ornament',
-			sceneBreakId: 'asterisks',
-		});
+		const snapshot = store.getSnapshot();
+		expect(snapshot.activeProject).toMatchObject({ id: 'project-a', name: 'Novel', metadata: { author: 'Author A' }, design: { themeId: 'modern' }, preview: { readerScale: 120, scrollTop: 48, activeSectionId: 'chapter-a' } });
+		expect(snapshot.registry.projects[1]).toMatchObject({ id: 'project-b', name: 'Novel 2', metadata: { author: 'Author B' }, preview: { readerScale: 85 } });
+		await Promise.resolve();
+		const saved = persist.mock.calls[persist.mock.calls.length - 1]?.[0];
+		expect(saved).toEqual(snapshot.registry);
+		expect(JSON.stringify(saved)).not.toContain('renderedHtml');
+		expect(JSON.stringify(saved)).not.toContain('runtime');
+	});
 
-		expect(renderPreviewState(store.getSnapshot())).toMatchObject({
-			title: 'The Test Manuscript',
-			author: 'Rafael Seno',
-			themeLabel: 'Modern',
-			typographyLabel: 'Spacious',
-			chapterStyleLabel: 'Ornament',
-			sceneBreakLabel: 'Asterisks',
-		});
+	it('updates preview rendering from shared active-project state without reloading source', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		store.updateMetadata({ author: 'Author' });
+		store.setRuntimeBook('project-a', { id: 'project-a', metadata: { title: 'Novel', author: 'Author', language: 'english', publisher: '', isbn: '' }, sections: [] });
+		store.updateDesign({ themeId: 'minimal' });
+		expect(renderPreviewState(store.getSnapshot())).toMatchObject({ title: 'Novel', author: 'Author', themeLabel: 'Minimal' });
 	});
 });

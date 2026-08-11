@@ -7,21 +7,17 @@ import {
 	BOOK_PREVIEW_VIEW_TYPE,
 } from '../plugin/constants';
 import type { BookProjectStore } from '../plugin/project-store';
-import type { BookDesignerSettings } from '../plugin/settings';
 
 export class BookPreviewView extends ItemView {
 	private root: Root | null = null;
 	private readonly projectStore: BookProjectStore;
-	private readonly getSettings: () => BookDesignerSettings;
 
 	constructor(
 		leaf: WorkspaceLeaf,
 		projectStore: BookProjectStore,
-		getSettings: () => BookDesignerSettings,
 	) {
 		super(leaf);
 		this.projectStore = projectStore;
-		this.getSettings = getSettings;
 	}
 
 	getViewType() {
@@ -49,7 +45,6 @@ export class BookPreviewView extends ItemView {
 			<StrictMode>
 				<BookPreviewApp
 					projectStore={this.projectStore}
-					settings={this.getSettings()}
 				/>
 			</StrictMode>,
 		);

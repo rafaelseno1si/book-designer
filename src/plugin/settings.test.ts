@@ -14,12 +14,10 @@ describe('normalizeBookDesignerSettings', () => {
 		expect(
 			normalizeBookDesignerSettings({
 				defaultPreviewDevice: 'exact-kindle',
-				autoRefreshPreview: false,
 				debugLogging: true,
 			}),
 		).toEqual({
 			defaultPreviewDevice: DEFAULT_SETTINGS.defaultPreviewDevice,
-			autoRefreshPreview: false,
 			debugLogging: true,
 		});
 	});
@@ -28,12 +26,10 @@ describe('normalizeBookDesignerSettings', () => {
 		expect(
 			normalizeBookDesignerSettings({
 				defaultPreviewDevice: 'tablet',
-				autoRefreshPreview: 'yes',
 				debugLogging: 1,
 			}),
 		).toEqual({
 			defaultPreviewDevice: 'tablet',
-			autoRefreshPreview: DEFAULT_SETTINGS.autoRefreshPreview,
 			debugLogging: DEFAULT_SETTINGS.debugLogging,
 		});
 	});
@@ -53,13 +49,11 @@ describe('normalizeBookDesignerSettings', () => {
 		expect(
 			normalizeBookDesignerSettings({
 				defaultPreviewDevice: 'ereader-large',
-				autoRefreshPreview: false,
 				debugLogging: true,
 				extra: 'ignored',
 			}),
 		).toEqual({
 			defaultPreviewDevice: 'ereader-large',
-			autoRefreshPreview: false,
 			debugLogging: true,
 		});
 	});

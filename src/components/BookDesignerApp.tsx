@@ -19,19 +19,8 @@ import { useBookProject } from './useBookProject';
 interface BookDesignerAppProps {
 	projectStore: BookProjectStore;
 	onOpenPreview: () => void;
+	onCreateProject: () => void;
 }
-
-const bookOutline = [
-	{ label: 'Title page', level: 0 },
-	{ label: 'Copyright', level: 0 },
-	{ label: 'Dedication', level: 0 },
-	{ label: 'Part I', level: 0 },
-	{ label: 'Chapter 1', level: 1 },
-	{ label: 'Chapter 2', level: 1 },
-	{ label: 'Chapter 3', level: 1 },
-	{ label: 'Back matter', level: 0 },
-	{ label: 'About author', level: 1 },
-] as const;
 
 const languageOptions = [
 	{ value: 'english', label: 'English' },
@@ -42,14 +31,29 @@ const languageOptions = [
 export function BookDesignerApp({
 	projectStore,
 	onOpenPreview,
+	onCreateProject,
 }: BookDesignerAppProps) {
-	const project = useBookProject(projectStore);
+	const snapshot = useBookProject(projectStore);
+	const project = snapshot.activeProject;
 
 	return (
 		<section className="book-designer-shell" aria-label="Book Designer">
 			<header className="book-designer-header">
 				<h1>Book Designer</h1>
 				<div className="book-designer-header-actions">
+					<label className="book-designer-project-select">
+						<span>Project</span>
+						<select
+							value={project?.id ?? ''}
+							onChange={(event) => projectStore.selectProject(event.currentTarget.value)}
+						>
+							<option value="" disabled>No active project</option>
+							{snapshot.registry.projects.map((availableProject) => (
+								<option key={availableProject.id} value={availableProject.id}>{availableProject.name}</option>
+							))}
+						</select>
+					</label>
+					<button type="button" className="book-designer-new-project-button" onClick={onCreateProject}>New project</button>
 					<label className="book-designer-format-select">
 						<span>Format</span>
 						<select defaultValue="ebook">
@@ -67,23 +71,11 @@ export function BookDesignerApp({
 				</div>
 			</header>
 
-			<aside className="book-designer-book-panel" aria-label="Book structure">
-				<h2>Book</h2>
-				<nav aria-label="Book sections">
-					{bookOutline.map((item) => (
-						<button
-							type="button"
-							key={item.label}
-							className={item.level === 1 ? 'is-child' : undefined}
-							title={`${item.label} configuration`}
-						>
-							{item.label}
-						</button>
-					))}
-				</nav>
-			</aside>
-
-			<main className="book-designer-design-panel" aria-label="Design">
+			{!project ? (
+				<main className="book-designer-design-panel" aria-label="Project selection">
+					<section className="book-designer-empty-project"><h2>Choose a manuscript folder</h2><p>Create a project to load its Markdown notes into Book Preview.</p><button type="button" onClick={onCreateProject}>New project</button></section>
+				</main>
+			) : <main className="book-designer-design-panel" aria-label="Design">
 				<section className="book-designer-theme-section">
 					<h2>Design</h2>
 					<h3>Theme</h3>
@@ -196,7 +188,7 @@ export function BookDesignerApp({
 						/>
 					</div>
 				</details>
-			</main>
+			</main>}
 		</section>
 	);
 }

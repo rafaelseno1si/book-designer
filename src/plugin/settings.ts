@@ -10,13 +10,11 @@ export type PreviewDeviceId = (typeof PREVIEW_DEVICE_IDS)[number];
 
 export interface BookDesignerSettings {
 	defaultPreviewDevice: PreviewDeviceId;
-	autoRefreshPreview: boolean;
 	debugLogging: boolean;
 }
 
 export const DEFAULT_SETTINGS: BookDesignerSettings = {
 	defaultPreviewDevice: 'ereader-6',
-	autoRefreshPreview: true,
 	debugLogging: false,
 };
 
@@ -45,11 +43,6 @@ export function normalizeBookDesignerSettings(
 			? persistedSettings.defaultPreviewDevice
 			: DEFAULT_SETTINGS.defaultPreviewDevice;
 
-	const autoRefreshPreview =
-		typeof persistedSettings.autoRefreshPreview === 'boolean'
-			? persistedSettings.autoRefreshPreview
-			: DEFAULT_SETTINGS.autoRefreshPreview;
-
 	const debugLogging =
 		typeof persistedSettings.debugLogging === 'boolean'
 			? persistedSettings.debugLogging
@@ -57,7 +50,6 @@ export function normalizeBookDesignerSettings(
 
 	return {
 		defaultPreviewDevice,
-		autoRefreshPreview,
 		debugLogging,
 	};
 }

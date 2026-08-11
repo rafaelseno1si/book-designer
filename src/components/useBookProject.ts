@@ -1,10 +1,10 @@
 import { useSyncExternalStore } from 'react';
 import type {
-	BookProjectState,
+	BookProjectSnapshot,
 	BookProjectStore,
 } from '../plugin/project-store';
 
-export function useBookProject(projectStore: BookProjectStore): BookProjectState {
+export function useBookProject(projectStore: BookProjectStore): BookProjectSnapshot {
 	return useSyncExternalStore(
 		(listener) => projectStore.subscribe(listener),
 		() => projectStore.getSnapshot(),

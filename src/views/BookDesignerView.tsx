@@ -9,15 +9,18 @@ export class BookDesignerView extends ItemView {
 	private root: Root | null = null;
 	private readonly projectStore: BookProjectStore;
 	private readonly openPreview: () => void;
+	private readonly createProject: () => void;
 
 	constructor(
 		leaf: WorkspaceLeaf,
 		projectStore: BookProjectStore,
 		openPreview: () => void,
+		createProject: () => void,
 	) {
 		super(leaf);
 		this.projectStore = projectStore;
 		this.openPreview = openPreview;
+		this.createProject = createProject;
 	}
 
 	getViewType() {
@@ -46,6 +49,7 @@ export class BookDesignerView extends ItemView {
 				<BookDesignerApp
 					projectStore={this.projectStore}
 					onOpenPreview={this.openPreview}
+					onCreateProject={this.createProject}
 				/>
 			</StrictMode>,
 		);
