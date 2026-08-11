@@ -1,4 +1,5 @@
-import { Notice, Plugin, TFile } from 'obsidian';
+import { editorInfoField, Notice, Plugin, TFile } from 'obsidian';
+import { ViewPlugin, type ViewUpdate } from '@codemirror/view';
 import type { VaultManuscriptReader } from './core/sources/manuscript-source';
 import { registerBookDesignerCommands } from './plugin/commands';
 import {
@@ -42,6 +43,10 @@ export default class BookDesignerPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on('create', (file) => this.manuscriptRuntime.handleVaultChange(file.path)));
 		this.registerEvent(this.app.vault.on('delete', (file) => this.manuscriptRuntime.handleVaultChange(file.path)));
 		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => this.manuscriptRuntime.handleVaultChange(file.path, oldPath)));
+		this.registerEvent(this.app.workspace.on('editor-change', (editor, info) => {
+			if (info.file) this.manuscriptRuntime.handleEditorChange(info.file.path, editor.getValue());
+		}));
+		this.registerLiveEditorSynchronization();
 
 		this.registerView(
 			BOOK_DESIGNER_VIEW_TYPE,
@@ -112,6 +117,26 @@ export default class BookDesignerPlugin extends Plugin {
 			console.error('Book Designer could not create a project.', error);
 			new Notice('Book designer could not create that project. Check the developer console for details.');
 		}
+	}
+
+	private registerLiveEditorSynchronization() {
+		const manuscriptRuntime = this.manuscriptRuntime;
+		this.registerEditorExtension(
+			ViewPlugin.fromClass(
+				class {
+					update(update: ViewUpdate) {
+						if (!update.docChanged) return;
+						const info = update.state.field(editorInfoField, false);
+						if (info?.file) {
+							manuscriptRuntime.handleEditorChange(
+								info.file.path,
+								update.state.doc.toString(),
+							);
+						}
+					}
+				},
+			),
+		);
 	}
 }
 

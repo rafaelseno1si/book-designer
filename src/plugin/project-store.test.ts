@@ -43,4 +43,15 @@ describe('BookProjectStore', () => {
 		store.updateDesign({ themeId: 'minimal' });
 		expect(renderPreviewState(store.getSnapshot())).toMatchObject({ title: 'Novel', author: 'Author', themeLabel: 'Minimal' });
 	});
+
+	it('keeps a rendered preview available while a background source reload runs', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		store.setRuntimeBook('project-a', { id: 'project-a', metadata: { title: 'Novel', author: '', language: 'english', publisher: '', isbn: '' }, sections: [{ id: 'chapter-1', type: 'chapter', title: 'Chapter', source: { vaultPath: 'Books/Novel/01.md' }, blocks: [] }] });
+		const renderedHtml = store.getSnapshot().runtime.renderedHtml;
+
+		store.setRuntimeLoading('project-a');
+
+		expect(store.getSnapshot().runtime).toMatchObject({ status: 'ready', renderedHtml });
+	});
 });

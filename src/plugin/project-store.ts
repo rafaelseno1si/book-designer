@@ -139,7 +139,18 @@ export class BookProjectStore {
 	}
 	updateDesign(design: Partial<BookProjectDesign>): void { this.updateActive((project) => ({ ...project, design: { ...project.design, ...design } }), true); }
 	updatePreview(preview: Partial<BookProjectPreviewState>): void { this.updateActive((project) => ({ ...project, preview: { ...project.preview, ...preview } }), preview.readerScale !== undefined); }
-	setRuntimeLoading(projectId: string): void { if (this.registry.activeProjectId === projectId) { this.runtime = { ...EMPTY_RUNTIME, status: 'loading' }; this.commit(false); } }
+	setRuntimeLoading(projectId: string): void {
+		if (this.registry.activeProjectId !== projectId) return;
+		// Keep the last successful preview visible while a background vault reload
+		// runs. This is especially important after Obsidian autosaves editor text.
+		if (this.runtime.book) {
+			this.runtime = { ...this.runtime, error: null };
+			this.commit(false);
+			return;
+		}
+		this.runtime = { ...EMPTY_RUNTIME, status: 'loading' };
+		this.commit(false);
+	}
 	setRuntimeBook(projectId: string, book: Book): void {
 		if (this.registry.activeProjectId !== projectId) return;
 		this.runtime = book.sections.length === 0 ? { ...EMPTY_RUNTIME, status: 'empty', book } : { status: 'ready', book, renderedHtml: '', error: null };

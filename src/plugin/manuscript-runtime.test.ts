@@ -44,4 +44,28 @@ describe('ActiveManuscriptRuntime', () => {
 		expect(store.getSnapshot().activeProject?.id).toBe('second');
 		expect(store.getSnapshot().runtime.book?.sections[0]?.source.vaultPath).toBe('Second/01.md');
 	});
+
+	it('updates only the active editor document from its unsaved buffer', async () => {
+		const timer = { callback: null as (() => void) | null };
+		const reader = {
+			listMarkdownFiles: vi.fn(async () => ['Novel/01.md', 'Novel/02.md']),
+			readMarkdownFile: vi.fn(async (path: string) => path.endsWith('01.md') ? '# Saved chapter' : '# Unchanged chapter'),
+		};
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Novel', 'Novel');
+		const runtime = new ActiveManuscriptRuntime(reader, store, 250, {
+			setTimeout: (callback) => { timer.callback = callback; return 1; },
+			clearTimeout: () => { timer.callback = null; },
+		}, 300);
+		runtime.handleStoreChange();
+		await vi.waitFor(() => expect(store.getSnapshot().runtime.status).toBe('ready'));
+		expect(reader.readMarkdownFile).toHaveBeenCalledTimes(2);
+
+		runtime.handleEditorChange('Novel/01.md', '# Unsaved live chapter');
+		const scheduled = timer.callback;
+		if (scheduled) scheduled();
+		await vi.waitFor(() => expect(store.getSnapshot().runtime.book?.sections[0]?.title).toBe('Unsaved live chapter'));
+		expect(store.getSnapshot().runtime.book?.sections[1]?.title).toBe('Unchanged chapter');
+		expect(reader.readMarkdownFile).toHaveBeenCalledTimes(2);
+	});
 });
