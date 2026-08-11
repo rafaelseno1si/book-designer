@@ -1,10 +1,10 @@
-export const THEME_IDS = ['classic', 'modern', 'draft'] as const;
+export const THEME_IDS = ['classic', 'modern', 'minimal'] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
 
 export const THEME_LABELS: Record<ThemeId, string> = {
 	classic: 'Classic',
 	modern: 'Modern',
-	draft: 'Draft',
+	minimal: 'Minimal',
 };
 
 export function isThemeId(value: string): value is ThemeId {
@@ -55,6 +55,8 @@ export interface BookProjectState {
 		title: string;
 		author: string;
 		language: string;
+		publisher: string;
+		isbn: string;
 	};
 	design: {
 		themeId: ThemeId;
@@ -85,7 +87,9 @@ export const DEFAULT_PROJECT_STATE: BookProjectState = {
 	metadata: {
 		title: '',
 		author: '',
-		language: 'en',
+		language: 'english',
+		publisher: '',
+		isbn: '',
 	},
 	design: {
 		themeId: 'classic',

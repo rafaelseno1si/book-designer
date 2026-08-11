@@ -2,7 +2,10 @@ import { Plugin } from 'obsidian';
 import { registerBookDesignerCommands } from './plugin/commands';
 import {
 	BOOK_DESIGNER_ICON,
+	BOOK_DESIGNER_RIBBON_LABEL,
 	BOOK_DESIGNER_VIEW_TYPE,
+	BOOK_PREVIEW_ICON,
+	BOOK_PREVIEW_RIBBON_LABEL,
 	BOOK_PREVIEW_VIEW_TYPE,
 } from './plugin/constants';
 import { BookProjectStore } from './plugin/project-store';
@@ -23,7 +26,10 @@ export default class BookDesignerPlugin extends Plugin {
 
 		this.registerView(
 			BOOK_DESIGNER_VIEW_TYPE,
-			(leaf) => new BookDesignerView(leaf, this.projectStore),
+			(leaf) =>
+				new BookDesignerView(leaf, this.projectStore, () => {
+					void this.activatePreviewView();
+				}),
 		);
 		this.registerView(
 			BOOK_PREVIEW_VIEW_TYPE,
@@ -37,8 +43,11 @@ export default class BookDesignerPlugin extends Plugin {
 
 		registerBookDesignerCommands(this);
 
-		this.addRibbonIcon(BOOK_DESIGNER_ICON, 'Open book designer', () => {
+		this.addRibbonIcon(BOOK_DESIGNER_ICON, BOOK_DESIGNER_RIBBON_LABEL, () => {
 			void this.activateDesignerView();
+		});
+		this.addRibbonIcon(BOOK_PREVIEW_ICON, BOOK_PREVIEW_RIBBON_LABEL, () => {
+			void this.activatePreviewView();
 		});
 
 		this.addSettingTab(new BookDesignerSettingsTab(this.app, this));

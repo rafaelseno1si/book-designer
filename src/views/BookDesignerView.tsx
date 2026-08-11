@@ -8,10 +8,16 @@ import type { BookProjectStore } from '../plugin/project-store';
 export class BookDesignerView extends ItemView {
 	private root: Root | null = null;
 	private readonly projectStore: BookProjectStore;
+	private readonly openPreview: () => void;
 
-	constructor(leaf: WorkspaceLeaf, projectStore: BookProjectStore) {
+	constructor(
+		leaf: WorkspaceLeaf,
+		projectStore: BookProjectStore,
+		openPreview: () => void,
+	) {
 		super(leaf);
 		this.projectStore = projectStore;
+		this.openPreview = openPreview;
 	}
 
 	getViewType() {
@@ -37,7 +43,10 @@ export class BookDesignerView extends ItemView {
 		this.root = createRoot(mountEl);
 		this.root.render(
 			<StrictMode>
-				<BookDesignerApp projectStore={this.projectStore} />
+				<BookDesignerApp
+					projectStore={this.projectStore}
+					onOpenPreview={this.openPreview}
+				/>
 			</StrictMode>,
 		);
 	}

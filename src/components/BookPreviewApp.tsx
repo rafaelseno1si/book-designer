@@ -86,9 +86,7 @@ export function BookPreviewApp({
 					aria-label={`${PREVIEW_DEVICE_LABELS[deviceId]} preview viewport`}
 				>
 					<div className="book-preview-paper">
-						<p className="book-designer-empty-eyebrow">
-							Shared project revision {preview.revision}
-						</p>
+						<p className="book-designer-empty-eyebrow">Preview</p>
 						<h2>{preview.title}</h2>
 						<p>{preview.author}</p>
 						<div className="book-preview-state-list">

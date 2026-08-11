@@ -11,7 +11,7 @@ describe('BookProjectStore', () => {
 
 		store.updateDesign({ themeId: 'modern' });
 		unsubscribe();
-		store.updateDesign({ themeId: 'draft' });
+		store.updateDesign({ themeId: 'minimal' });
 
 		expect(notificationCount).toBe(1);
 	});

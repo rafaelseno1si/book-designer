@@ -56,7 +56,7 @@ This repository is intended to live inside an Obsidian vault at:
 
 After building, reload Obsidian 1.7.2 or later and enable **Book Designer** in **Settings -> Community plugins**.
 
-Use the ribbon icon or **Book Designer: Open** to open the configuration workspace. Use **Book Designer: Open preview** to open the lightweight preview view. Because both are normal Obsidian tabs, they can be arranged beside Markdown, Longform, or each other.
+Use the **Book Designer** ribbon button or **Book Designer: Open** to open the configuration workspace. Use the **Book Preview** ribbon button or **Book Designer: Open preview** to open the lightweight preview view. Because both are normal Obsidian tabs, they can be arranged beside Markdown, Longform, or each other.
 
 ## Release artifacts
 
