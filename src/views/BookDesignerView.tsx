@@ -3,18 +3,15 @@ import { StrictMode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { BookDesignerApp } from '../components/BookDesignerApp';
 import { BOOK_DESIGNER_ICON, BOOK_DESIGNER_VIEW_TYPE } from '../plugin/constants';
-import type { BookDesignerSettings } from '../plugin/settings';
+import type { BookProjectStore } from '../plugin/project-store';
 
 export class BookDesignerView extends ItemView {
 	private root: Root | null = null;
-	private readonly getSettings: () => BookDesignerSettings;
+	private readonly projectStore: BookProjectStore;
 
-	constructor(
-		leaf: WorkspaceLeaf,
-		getSettings: () => BookDesignerSettings,
-	) {
+	constructor(leaf: WorkspaceLeaf, projectStore: BookProjectStore) {
 		super(leaf);
-		this.getSettings = getSettings;
+		this.projectStore = projectStore;
 	}
 
 	getViewType() {
@@ -40,7 +37,7 @@ export class BookDesignerView extends ItemView {
 		this.root = createRoot(mountEl);
 		this.root.render(
 			<StrictMode>
-				<BookDesignerApp settings={this.getSettings()} />
+				<BookDesignerApp projectStore={this.projectStore} />
 			</StrictMode>,
 		);
 	}

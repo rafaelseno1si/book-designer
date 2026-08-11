@@ -1,36 +1,59 @@
 import { Plugin } from 'obsidian';
 import { registerBookDesignerCommands } from './plugin/commands';
-import { BOOK_DESIGNER_ICON, BOOK_DESIGNER_VIEW_TYPE } from './plugin/constants';
+import {
+	BOOK_DESIGNER_ICON,
+	BOOK_DESIGNER_VIEW_TYPE,
+	BOOK_PREVIEW_VIEW_TYPE,
+} from './plugin/constants';
+import { BookProjectStore } from './plugin/project-store';
 import {
 	BookDesignerSettings,
 	normalizeBookDesignerSettings,
 } from './plugin/settings';
 import { BookDesignerSettingsTab } from './views/BookDesignerSettingsTab';
 import { BookDesignerView } from './views/BookDesignerView';
+import { BookPreviewView } from './views/BookPreviewView';
 
 export default class BookDesignerPlugin extends Plugin {
 	settings!: BookDesignerSettings;
+	readonly projectStore = new BookProjectStore();
 
 	async onload() {
 		await this.loadSettings();
 
 		this.registerView(
 			BOOK_DESIGNER_VIEW_TYPE,
-			(leaf) => new BookDesignerView(leaf, () => this.settings),
+			(leaf) => new BookDesignerView(leaf, this.projectStore),
+		);
+		this.registerView(
+			BOOK_PREVIEW_VIEW_TYPE,
+			(leaf) =>
+				new BookPreviewView(
+					leaf,
+					this.projectStore,
+					() => this.settings,
+				),
 		);
 
 		registerBookDesignerCommands(this);
 
 		this.addRibbonIcon(BOOK_DESIGNER_ICON, 'Open book designer', () => {
-			void this.activateView();
+			void this.activateDesignerView();
 		});
 
 		this.addSettingTab(new BookDesignerSettingsTab(this.app, this));
 	}
 
-	async activateView() {
-		const existingLeaf =
-			this.app.workspace.getLeavesOfType(BOOK_DESIGNER_VIEW_TYPE)[0];
+	async activateDesignerView() {
+		await this.activateView(BOOK_DESIGNER_VIEW_TYPE);
+	}
+
+	async activatePreviewView() {
+		await this.activateView(BOOK_PREVIEW_VIEW_TYPE);
+	}
+
+	private async activateView(viewType: string) {
+		const existingLeaf = this.app.workspace.getLeavesOfType(viewType)[0];
 
 		if (existingLeaf) {
 			await this.app.workspace.revealLeaf(existingLeaf);
@@ -39,7 +62,7 @@ export default class BookDesignerPlugin extends Plugin {
 
 		const leaf = this.app.workspace.getLeaf('tab');
 		await leaf.setViewState({
-			type: BOOK_DESIGNER_VIEW_TYPE,
+			type: viewType,
 			active: true,
 		});
 		await this.app.workspace.revealLeaf(leaf);

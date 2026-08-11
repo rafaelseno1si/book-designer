@@ -5,8 +5,10 @@ Book Designer is an Obsidian community plugin for visually designing and preview
 Phase 0 establishes the plugin foundation:
 
 - A custom Obsidian workspace view named **Book Designer**
-- A React-backed application shell
+- A custom Obsidian workspace view named **Book Preview**
+- React-backed application shells for both views
 - A responsive editorial workspace layout
+- Shared in-memory project state for Designer and Preview
 - Validated global settings
 - Unit-test infrastructure for pure TypeScript modules
 
@@ -52,7 +54,9 @@ This repository is intended to live inside an Obsidian vault at:
 <Vault>/.obsidian/plugins/book-designer/
 ```
 
-After building, reload Obsidian 1.7.2 or later and enable **Book Designer** in **Settings -> Community plugins**. Use the ribbon icon or the command **Book Designer: Open** to open or reveal the workspace view.
+After building, reload Obsidian 1.7.2 or later and enable **Book Designer** in **Settings -> Community plugins**.
+
+Use the ribbon icon or **Book Designer: Open** to open the configuration workspace. Use **Book Designer: Open preview** to open the lightweight preview view. Because both are normal Obsidian tabs, they can be arranged beside Markdown, Longform, or each other.
 
 ## Release artifacts
 

@@ -1,136 +1,237 @@
-import { useState } from 'react';
+import type { ChangeEvent } from 'react';
 import {
-	BookDesignerSettings,
-	PREVIEW_DEVICE_LABELS,
-} from '../plugin/settings';
-
-type MobilePanel = 'chapters' | 'preview' | 'design';
+	CHAPTER_STYLE_IDS,
+	CHAPTER_STYLE_LABELS,
+	SCENE_BREAK_IDS,
+	SCENE_BREAK_LABELS,
+	THEME_IDS,
+	THEME_LABELS,
+	TYPOGRAPHY_SCALES,
+	TYPOGRAPHY_SCALE_LABELS,
+	type BookProjectStore,
+	isChapterStyleId,
+	isSceneBreakId,
+	isThemeId,
+	isTypographyScale,
+	renderPreviewState,
+} from '../plugin/project-store';
+import { useBookProject } from './useBookProject';
 
 interface BookDesignerAppProps {
-	settings: BookDesignerSettings;
+	projectStore: BookProjectStore;
 }
 
-const mobilePanels: Array<{ id: MobilePanel; label: string }> = [
-	{ id: 'chapters', label: 'Chapters' },
-	{ id: 'preview', label: 'Preview' },
-	{ id: 'design', label: 'Design' },
-];
-
-export function BookDesignerApp({ settings }: BookDesignerAppProps) {
-	const [activePanel, setActivePanel] = useState<MobilePanel>('preview');
+export function BookDesignerApp({ projectStore }: BookDesignerAppProps) {
+	const project = useBookProject(projectStore);
+	const preview = renderPreviewState(project);
 
 	return (
 		<section
 			className="book-designer-shell"
-			aria-label="Book Designer workspace"
+			aria-label="Book Designer configuration workspace"
 		>
 			<header className="book-designer-header">
 				<div>
 					<h1>Book Designer</h1>
-					<p>Design and preview manuscripts from your vault.</p>
+					<p>Configure manuscript structure, metadata, and book design.</p>
 				</div>
-				<nav
-					className="book-designer-mobile-tabs"
-					aria-label="Workspace panels"
-				>
-					{mobilePanels.map((panel) => (
-						<button
-							type="button"
-							key={panel.id}
-							className={
-								activePanel === panel.id ? 'is-active' : undefined
-							}
-							aria-pressed={activePanel === panel.id}
-							onClick={() => setActivePanel(panel.id)}
-						>
-							{panel.label}
-						</button>
-					))}
-				</nav>
+				<div className="book-designer-sync-status" aria-live="polite">
+					<span>Shared project</span>
+					<strong>Revision {project.revision}</strong>
+				</div>
 			</header>
 
-			<aside
-				className={panelClassName('chapters', activePanel)}
-				aria-label="Manuscript navigation"
-			>
+			<aside className="book-designer-panel" aria-label="Manuscript structure">
 				<div className="book-designer-panel-heading">
 					<h2>Manuscript</h2>
 					<span>Not loaded</span>
 				</div>
 				<div className="book-designer-empty-list">
 					<p>No manuscript selected.</p>
-					<p>Folder and chapter selection will be added next.</p>
+					<p>Folder and chapter ordering will be added next.</p>
 				</div>
 			</aside>
 
-			<main
-				className={previewClassName(activePanel)}
-				aria-label="Book preview workspace"
-			>
-				<div className="book-designer-toolbar" aria-label="Preview toolbar">
+			<main className="book-designer-config-main" aria-label="Book configuration">
+				<section className="book-designer-config-section">
 					<div>
-						<span className="book-designer-toolbar-label">Device</span>
-						<strong>
-							{PREVIEW_DEVICE_LABELS[settings.defaultPreviewDevice]}
-						</strong>
+						<h2>Metadata</h2>
+						<p>Shared book identity used by Designer and Preview.</p>
 					</div>
-					<div className="book-designer-toolbar-actions">
-						<button
-							type="button"
-							title="Device controls will be added next"
-							disabled
-						>
-							Device
-						</button>
-						<button
-							type="button"
-							title="Refresh will be available after manuscript loading"
-							disabled
-						>
-							Refresh
-						</button>
+					<div className="book-designer-field-grid">
+						<TextField
+							label="Title"
+							value={project.metadata.title}
+							placeholder="Untitled book"
+							onChange={(value) =>
+								projectStore.updateMetadata({ title: value })
+							}
+						/>
+						<TextField
+							label="Author"
+							value={project.metadata.author}
+							placeholder="Unknown author"
+							onChange={(value) =>
+								projectStore.updateMetadata({ author: value })
+							}
+						/>
+						<TextField
+							label="Language"
+							value={project.metadata.language}
+							placeholder="en"
+							onChange={(value) =>
+								projectStore.updateMetadata({ language: value })
+							}
+						/>
 					</div>
-				</div>
+				</section>
 
-				<section
-					className="book-designer-preview-canvas"
-					aria-label="Preview canvas"
-				>
-					<div className="book-designer-paper">
-						<p className="book-designer-empty-eyebrow">Preview</p>
-						<h2>No manuscript selected</h2>
-						<p>
-							Manuscript selection will be added next. This space will
-							host the isolated book preview.
-						</p>
+				<section className="book-designer-config-section">
+					<div>
+						<h2>Book design</h2>
+						<p>These choices update open Book Preview tabs immediately.</p>
+					</div>
+					<div className="book-designer-field-grid">
+						<SelectField
+							label="Theme"
+							value={project.design.themeId}
+							options={THEME_IDS.map((themeId) => ({
+								value: themeId,
+								label: THEME_LABELS[themeId],
+							}))}
+							onChange={(value) => {
+								if (isThemeId(value)) {
+									projectStore.updateDesign({ themeId: value });
+								}
+							}}
+						/>
+						<SelectField
+							label="Typography"
+							value={project.design.typographyScale}
+							options={TYPOGRAPHY_SCALES.map((scale) => ({
+								value: scale,
+								label: TYPOGRAPHY_SCALE_LABELS[scale],
+							}))}
+							onChange={(value) => {
+								if (isTypographyScale(value)) {
+									projectStore.updateDesign({
+										typographyScale: value,
+									});
+								}
+							}}
+						/>
+						<SelectField
+							label="Chapter openings"
+							value={project.design.chapterStyleId}
+							options={CHAPTER_STYLE_IDS.map((styleId) => ({
+								value: styleId,
+								label: CHAPTER_STYLE_LABELS[styleId],
+							}))}
+							onChange={(value) => {
+								if (isChapterStyleId(value)) {
+									projectStore.updateDesign({
+										chapterStyleId: value,
+									});
+								}
+							}}
+						/>
+						<SelectField
+							label="Scene breaks"
+							value={project.design.sceneBreakId}
+							options={SCENE_BREAK_IDS.map((sceneBreakId) => ({
+								value: sceneBreakId,
+								label: SCENE_BREAK_LABELS[sceneBreakId],
+							}))}
+							onChange={(value) => {
+								if (isSceneBreakId(value)) {
+									projectStore.updateDesign({
+										sceneBreakId: value,
+									});
+								}
+							}}
+						/>
 					</div>
 				</section>
 			</main>
 
-			<aside
-				className={panelClassName('design', activePanel)}
-				aria-label="Design controls"
-			>
+			<aside className="book-designer-panel" aria-label="Shared preview state">
 				<div className="book-designer-panel-heading">
-					<h2>Design</h2>
-					<span>Defaults</span>
+					<h2>Preview state</h2>
+					<span>Live</span>
 				</div>
 				<div className="book-designer-control-stack">
+					<ReadOnlySetting label="Title" value={preview.title} />
+					<ReadOnlySetting label="Author" value={preview.author} />
+					<ReadOnlySetting label="Theme" value={preview.themeLabel} />
 					<ReadOnlySetting
-						label="Preview device"
-						value={PREVIEW_DEVICE_LABELS[settings.defaultPreviewDevice]}
+						label="Typography"
+						value={preview.typographyLabel}
 					/>
 					<ReadOnlySetting
-						label="Auto refresh"
-						value={settings.autoRefreshPreview ? 'On' : 'Off'}
+						label="Chapter style"
+						value={preview.chapterStyleLabel}
 					/>
 					<ReadOnlySetting
-						label="Debug logging"
-						value={settings.debugLogging ? 'On' : 'Off'}
+						label="Scene breaks"
+						value={preview.sceneBreakLabel}
 					/>
 				</div>
 			</aside>
 		</section>
+	);
+}
+
+function TextField({
+	label,
+	value,
+	placeholder,
+	onChange,
+}: {
+	label: string;
+	value: string;
+	placeholder: string;
+	onChange: (value: string) => void;
+}) {
+	return (
+		<label className="book-designer-field">
+			<span>{label}</span>
+			<input
+				type="text"
+				value={value}
+				placeholder={placeholder}
+				onChange={(event) => onChange(event.currentTarget.value)}
+			/>
+		</label>
+	);
+}
+
+function SelectField({
+	label,
+	value,
+	options,
+	onChange,
+}: {
+	label: string;
+	value: string;
+	options: Array<{ value: string; label: string }>;
+	onChange: (value: string) => void;
+}) {
+	return (
+		<label className="book-designer-field">
+			<span>{label}</span>
+			<select
+				value={value}
+				onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+					onChange(event.currentTarget.value)
+				}
+			>
+				{options.map((option) => (
+					<option key={option.value} value={option.value}>
+						{option.label}
+					</option>
+				))}
+			</select>
+		</label>
 	);
 }
 
@@ -147,23 +248,4 @@ function ReadOnlySetting({
 			<strong>{value}</strong>
 		</div>
 	);
-}
-
-function panelClassName(panel: Exclude<MobilePanel, 'preview'>, activePanel: MobilePanel) {
-	return [
-		'book-designer-panel',
-		`book-designer-panel--${panel}`,
-		activePanel === panel ? 'is-active' : '',
-	]
-		.filter(Boolean)
-		.join(' ');
-}
-
-function previewClassName(activePanel: MobilePanel) {
-	return [
-		'book-designer-preview-workspace',
-		activePanel === 'preview' ? 'is-active' : '',
-	]
-		.filter(Boolean)
-		.join(' ');
 }
