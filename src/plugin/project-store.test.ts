@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BookProjectStore, emptyProjectRegistry, renderPreviewState } from './project-store';
+import { BookProjectStore, emptyProjectRegistry, normalizeProjectRegistry, renderPreviewState } from './project-store';
 
 describe('BookProjectStore', () => {
 	it('keeps the external-store snapshot stable until state changes', () => {
@@ -10,6 +10,18 @@ describe('BookProjectStore', () => {
 		store.createProject('Books/Novel', 'Novel');
 		expect(store.getSnapshot()).not.toBe(initialSnapshot);
 		expect(store.getSnapshot()).toBe(store.getSnapshot());
+	});
+
+	it('defaults e-reader projects to paged portrait preview and migrates older preview state', () => {
+		const registry = normalizeProjectRegistry({
+			projects: [{
+				id: 'project-a', name: 'Novel', source: { type: 'folder', path: 'Books/Novel' },
+				metadata: {}, design: {}, preview: { deviceId: 'ereader-6' },
+			}],
+			activeProjectId: 'project-a',
+		}, 'phone');
+
+		expect(registry.projects[0]?.preview).toMatchObject({ mode: 'paged', orientation: 'portrait', pageIndex: 0 });
 	});
 
 	it('persists only project configuration and preserves per-project settings when switching', async () => {

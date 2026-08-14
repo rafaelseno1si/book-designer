@@ -33,9 +33,16 @@ export interface BookProjectDesign {
 export interface BookProjectPreviewState {
 	deviceId: PreviewDeviceId;
 	readerScale: number;
+	mode: PreviewMode;
+	orientation: PreviewOrientation;
+	pageIndex: number;
 	activeSectionId: string | null;
 	scrollTop: number;
 }
+export const PREVIEW_MODES = ['continuous', 'paged'] as const;
+export type PreviewMode = (typeof PREVIEW_MODES)[number];
+export const PREVIEW_ORIENTATIONS = ['portrait', 'landscape'] as const;
+export type PreviewOrientation = (typeof PREVIEW_ORIENTATIONS)[number];
 export interface BookProject {
 	id: string;
 	name: string;
@@ -112,7 +119,7 @@ export class BookProjectStore {
 		const project: BookProject = {
 			id: this.createId(), name, source: { type: 'folder', path: folderPath },
 			metadata: { ...DEFAULT_PROJECT_METADATA, title: folderName }, design: { ...DEFAULT_PROJECT_DESIGN },
-			preview: { deviceId: this.defaultDevice, readerScale: 100, activeSectionId: null, scrollTop: 0 },
+			preview: defaultPreviewState(this.defaultDevice),
 		};
 		this.registry = { ...this.registry, projects: [...this.registry.projects, project], activeProjectId: project.id };
 		this.runtime = { ...EMPTY_RUNTIME, status: 'loading' };
@@ -215,11 +222,29 @@ function normalizeProject(value: unknown, defaultDevice: PreviewDeviceId): BookP
 		title: stringOr(metadata.title, ''), author: stringOr(metadata.author, ''), language: stringOr(metadata.language, 'english'), publisher: stringOr(metadata.publisher, ''), isbn: stringOr(metadata.isbn, ''),
 	}, design: {
 		themeId: isThemeId(themeId) ? themeId : 'classic', typographyScale: isTypographyScale(typographyScale) ? typographyScale : 'comfortable', chapterStyleId: isChapterStyleId(chapterStyleId) ? chapterStyleId : 'quiet', sceneBreakId: isSceneBreakId(sceneBreakId) ? sceneBreakId : 'space',
-	}, preview: { deviceId: isPreviewDevice(preview.deviceId) ? preview.deviceId : defaultDevice, readerScale: validScale(preview.readerScale), activeSectionId: typeof preview.activeSectionId === 'string' ? preview.activeSectionId : null, scrollTop: validScrollTop(preview.scrollTop) } }];
+	}, preview: normalizePreviewState(preview, defaultDevice) }];
 }
 function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet'].includes(value); }
+function isPreviewMode(value: unknown): value is PreviewMode { return value === 'continuous' || value === 'paged'; }
+function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 130 ? value : 100; }
 function validScrollTop(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0; }
+function validPageIndex(value: unknown): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0; }
+function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
+	return { deviceId, readerScale: 100, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+}
+function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {
+	const deviceId = isPreviewDevice(value.deviceId) ? value.deviceId : defaultDevice;
+	return {
+		deviceId,
+		readerScale: validScale(value.readerScale),
+		mode: isPreviewMode(value.mode) ? value.mode : deviceId === 'ereader-6' ? 'paged' : 'continuous',
+		orientation: isPreviewOrientation(value.orientation) ? value.orientation : 'portrait',
+		pageIndex: validPageIndex(value.pageIndex),
+		activeSectionId: typeof value.activeSectionId === 'string' ? value.activeSectionId : null,
+		scrollTop: validScrollTop(value.scrollTop),
+	};
+}
 function stringOr(value: unknown, fallback: string): string { return typeof value === 'string' ? value : fallback; }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview } } : null; }
