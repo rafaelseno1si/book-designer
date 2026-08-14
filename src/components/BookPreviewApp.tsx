@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { PreviewMode, BookProjectStore } from '../plugin/project-store';
 import { PREVIEW_DEVICE_IDS, PREVIEW_DEVICE_LABELS, isPreviewDeviceId } from '../plugin/settings';
+import { ContinuousBookVirtualizer } from './continuous-book-virtualizer';
 import { useBookProject } from './useBookProject';
 
 interface BookPreviewAppProps { projectStore: BookProjectStore; }
@@ -74,6 +75,7 @@ function BookPreviewFrame({
 	const scrollTimer = useRef<number | null>(null);
 	const resizeObserver = useRef<ResizeObserver | null>(null);
 	const pageLayoutFrame = useRef<number | null>(null);
+	const virtualizer = useRef<ContinuousBookVirtualizer | null>(null);
 	const modeRef = useRef(mode);
 	const pageIndexRef = useRef(pageIndex);
 	const pageStartsRef = useRef<number[]>([0]);
@@ -83,6 +85,7 @@ function BookPreviewFrame({
 		if (scrollTimer.current !== null) window.clearTimeout(scrollTimer.current);
 		if (pageLayoutFrame.current !== null) window.cancelAnimationFrame(pageLayoutFrame.current);
 		resizeObserver.current?.disconnect();
+		virtualizer.current?.dispose();
 	}, []);
 	useEffect(() => { modeRef.current = mode; }, [mode]);
 	useEffect(() => { pageIndexRef.current = pageIndex; }, [pageIndex]);
@@ -90,6 +93,8 @@ function BookPreviewFrame({
 		if (!loaded.current || renderedHtml.current === html) return;
 		const document = frameRef.current?.contentDocument;
 		if (!document) return;
+		virtualizer.current?.dispose();
+		virtualizer.current = null;
 		patchPreviewDocument(document, html);
 		renderedHtml.current = html;
 		applyLayout();
@@ -106,10 +111,16 @@ function BookPreviewFrame({
 		if (activeMode === 'continuous') {
 			clearPagedGaps(document);
 			pageStartsRef.current = [0];
+			if (!virtualizer.current) virtualizer.current = ContinuousBookVirtualizer.create(document, Math.max(360, frame.clientHeight));
+			virtualizer.current?.update(latestScrollTop.current, frame.clientHeight);
 			document.defaultView?.scrollTo({ top: latestScrollTop.current });
 			onPageCountChange(1);
 			return;
 		}
+		if (virtualizer.current) {
+			virtualizer.current.restoreAll();
+			virtualizer.current = null;
+		} else restoreBookSections(document);
 		if (!measureAfterPaint) {
 			if (pageLayoutFrame.current !== null) window.cancelAnimationFrame(pageLayoutFrame.current);
 			pageLayoutFrame.current = window.requestAnimationFrame(() => {
@@ -138,6 +149,7 @@ function BookPreviewFrame({
 		resizeObserver.current.observe(frame);
 		frameWindow.addEventListener('scroll', () => {
 			latestScrollTop.current = frameWindow.scrollY;
+			if (modeRef.current === 'continuous') virtualizer.current?.update(frameWindow.scrollY, frame.clientHeight);
 			if (scrollTimer.current !== null) return;
 			scrollTimer.current = window.setTimeout(() => {
 				scrollTimer.current = null;
@@ -217,6 +229,14 @@ function nearestPageIndex(pageStarts: number[], scrollTop: number): number {
 	return pageStarts.reduce((nearest, start, index) => Math.abs(start - scrollTop) < Math.abs((pageStarts[nearest] ?? 0) - scrollTop) ? index : nearest, 0);
 }
 
+function restoreBookSections(document: Document): void {
+	const book = document.querySelector<HTMLElement>('.book');
+	if (!book) return;
+	const templates = Array.from(book.querySelectorAll<HTMLTemplateElement>(':scope > template[data-book-section-template]'));
+	if (templates.length === 0) return;
+	book.replaceChildren(...templates.map((template) => template.content.cloneNode(true)));
+}
+
 function patchPreviewDocument(document: Document, html: string): void {
 	const nextDocument = new DOMParser().parseFromString(html, 'text/html');
 	document.title = nextDocument.title;
@@ -226,6 +246,10 @@ function patchPreviewDocument(document: Document, html: string): void {
 	const currentBook = document.body.querySelector('.book');
 	const nextBook = nextDocument.body.querySelector('.book');
 	if (!currentBook || !nextBook) { document.body.replaceChildren(...Array.from(nextDocument.body.children, (element) => element.cloneNode(true))); return; }
+	if (nextBook.querySelector('template[data-book-section-template]')) {
+		currentBook.replaceChildren(...Array.from(nextBook.children, (element) => element.cloneNode(true)));
+		return;
+	}
 	const currentSections = new Map(Array.from(currentBook.querySelectorAll<HTMLElement>(':scope > [data-section-id]')).map((section) => [section.dataset.sectionId, section]));
 	for (const nextSection of Array.from(nextBook.querySelectorAll<HTMLElement>(':scope > [data-section-id]'))) {
 		const sectionId = nextSection.dataset.sectionId;

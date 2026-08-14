@@ -10,6 +10,7 @@ describe('manuscriptSourceToBook', () => {
 		expect(html).toContain('<em>quiet</em>');
 		expect(html).toContain('<strong>beginning</strong>');
 		expect(html).toContain('https://example.com');
+		expect(html).toContain('data-book-section-template');
 		expect(html).not.toContain('tags: [draft]');
 	});
 });
