@@ -37,7 +37,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				<label><span>Reader size</span><input type="range" min="85" max="130" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /></label>
 			</div>}
 		</header>
-		<main className="book-preview-canvas"><section className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
+		<main className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><section className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
 			{!project ? <PreviewMessage title="No active project" message="Create a Book Project from a vault folder in Book Designer." />
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
@@ -74,17 +74,20 @@ function BookPreviewFrame({
 	const loaded = useRef(false);
 	const scrollTimer = useRef<number | null>(null);
 	const resizeObserver = useRef<ResizeObserver | null>(null);
+	const frameCleanup = useRef<(() => void) | null>(null);
 	const pageLayoutFrame = useRef<number | null>(null);
 	const virtualizer = useRef<ContinuousBookVirtualizer | null>(null);
 	const modeRef = useRef(mode);
 	const pageIndexRef = useRef(pageIndex);
-	const pageStartsRef = useRef<number[]>([0]);
+	const materializedMode = useRef<PreviewMode | null>(null);
+	const pagedViewportHeight = useRef(0);
 	const [initialDocument] = useState(html);
 
 	useEffect(() => () => {
 		if (scrollTimer.current !== null) window.clearTimeout(scrollTimer.current);
 		if (pageLayoutFrame.current !== null) window.cancelAnimationFrame(pageLayoutFrame.current);
 		resizeObserver.current?.disconnect();
+		frameCleanup.current?.();
 		virtualizer.current?.dispose();
 	}, []);
 	useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -95,6 +98,7 @@ function BookPreviewFrame({
 		if (!document) return;
 		virtualizer.current?.dispose();
 		virtualizer.current = null;
+		materializedMode.current = null;
 		patchPreviewDocument(document, html);
 		renderedHtml.current = html;
 		applyLayout();
@@ -107,20 +111,23 @@ function BookPreviewFrame({
 		if (!frame || !document) return;
 		const activeMode = modeRef.current;
 		const activePageIndex = pageIndexRef.current;
+		const mustRematerialize = materializedMode.current !== activeMode
+			|| activeMode === 'paged' && Math.abs(pagedViewportHeight.current - frame.clientHeight) > 1;
+		if (mustRematerialize) {
+			virtualizer.current?.dispose();
+			virtualizer.current = null;
+			restoreBookSource(document, renderedHtml.current);
+			materializedMode.current = activeMode;
+			if (activeMode === 'paged') pagedViewportHeight.current = frame.clientHeight;
+		}
 		applyPreviewLayout(document, activeMode);
 		if (activeMode === 'continuous') {
-			clearPagedGaps(document);
-			pageStartsRef.current = [0];
 			if (!virtualizer.current) virtualizer.current = ContinuousBookVirtualizer.create(document, Math.max(360, frame.clientHeight));
 			virtualizer.current?.update(latestScrollTop.current, frame.clientHeight);
 			document.defaultView?.scrollTo({ top: latestScrollTop.current });
 			onPageCountChange(1);
 			return;
 		}
-		if (virtualizer.current) {
-			virtualizer.current.restoreAll();
-			virtualizer.current = null;
-		} else restoreBookSections(document);
 		if (!measureAfterPaint) {
 			if (pageLayoutFrame.current !== null) window.cancelAnimationFrame(pageLayoutFrame.current);
 			pageLayoutFrame.current = window.requestAnimationFrame(() => {
@@ -129,27 +136,41 @@ function BookPreviewFrame({
 			});
 			return;
 		}
-		const pageStarts = createPagedBoundaries(document, frame.clientHeight);
-		pageStartsRef.current = pageStarts;
-		const count = pageStarts.length;
+		if (!virtualizer.current) {
+			restoreBookSections(document);
+			createPagedPages(document);
+			const viewportHeight = document.defaultView?.innerHeight ?? frame.clientHeight;
+			virtualizer.current = ContinuousBookVirtualizer.create(document, viewportHeight, ':scope > .book-page', viewportHeight);
+		}
+		const count = virtualizer.current?.count ?? 1;
 		onPageCountChange(count);
 		const clampedPageIndex = Math.min(activePageIndex, count - 1);
 		if (activePageIndex !== clampedPageIndex) onPageIndexChange(clampedPageIndex);
-		document.defaultView?.scrollTo({ top: pageStarts[clampedPageIndex] ?? 0, left: 0 });
+		virtualizer.current?.scrollToIndex(clampedPageIndex);
+		virtualizer.current?.update(document.defaultView?.scrollY ?? 0, frame.clientHeight);
 	};
 
 	const handleLoad = () => {
 		const frame = frameRef.current;
 		const frameWindow = frame?.contentWindow;
 		if (!frame || !frameWindow) return;
+		frameCleanup.current?.();
 		loaded.current = true;
 		renderedHtml.current = html;
 		applyLayout();
-		resizeObserver.current = new ResizeObserver(() => applyLayout());
+		resizeObserver.current?.disconnect();
+		const invalidateForResize = () => {
+			if (modeRef.current === 'paged') {
+				materializedMode.current = null;
+				pagedViewportHeight.current = 0;
+			}
+			applyLayout();
+		};
+		resizeObserver.current = new ResizeObserver(invalidateForResize);
 		resizeObserver.current.observe(frame);
-		frameWindow.addEventListener('scroll', () => {
+		const handleScroll = () => {
 			latestScrollTop.current = frameWindow.scrollY;
-			if (modeRef.current === 'continuous') virtualizer.current?.update(frameWindow.scrollY, frame.clientHeight);
+			virtualizer.current?.update(frameWindow.scrollY, frame.clientHeight);
 			if (scrollTimer.current !== null) return;
 			scrollTimer.current = window.setTimeout(() => {
 				scrollTimer.current = null;
@@ -158,16 +179,22 @@ function BookPreviewFrame({
 				if (!document || !currentWindow) return;
 				let scrollTop = currentWindow.scrollY;
 				if (modeRef.current === 'paged') {
-					const pageIndex = nearestPageIndex(pageStartsRef.current, scrollTop);
-					scrollTop = pageStartsRef.current[pageIndex] ?? 0;
-					currentWindow.scrollTo({ top: scrollTop, left: 0 });
+					const pageIndex = virtualizer.current?.nearestIndex(scrollTop) ?? 0;
+					virtualizer.current?.scrollToIndex(pageIndex);
+					scrollTop = currentWindow.scrollY;
 					onPageIndexChange(pageIndex);
 				}
 				const sections = Array.from(document.querySelectorAll<HTMLElement>('[data-section-id]'));
 				const activeSectionId = sections.find((section) => section.offsetTop + section.offsetHeight > scrollTop)?.dataset.sectionId ?? null;
 				onLocationChange(scrollTop, activeSectionId);
 			}, 200);
-		});
+		};
+		frameWindow.addEventListener('scroll', handleScroll);
+		frameWindow.addEventListener('resize', invalidateForResize);
+		frameCleanup.current = () => {
+			frameWindow.removeEventListener('scroll', handleScroll);
+			frameWindow.removeEventListener('resize', invalidateForResize);
+		};
 	};
 
 	return <iframe ref={frameRef} className="book-preview-frame" sandbox="allow-same-origin" title="Book preview" srcDoc={initialDocument} onLoad={handleLoad} />;
@@ -177,56 +204,58 @@ function applyPreviewLayout(document: Document, mode: PreviewMode): void {
 	const style = document.getElementById('book-designer-preview-layout');
 	if (!(style instanceof HTMLStyleElement)) return;
 	style.textContent = mode === 'paged'
-		? 'html,body{width:100%;min-width:0;overflow-x:clip;overflow-y:auto;scroll-behavior:auto}.book{width:100%;min-width:0;max-width:none;margin:0;padding:3.5rem 2.25rem;overflow-wrap:anywhere;word-break:break-word}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.book-preview-page-gap{display:block;width:100%;pointer-events:none}.chapter header{break-after:avoid;break-inside:avoid}'
+		? 'html{width:100%;height:100%;margin:0!important;padding:0!important;min-width:0;overflow-x:clip;overflow-y:scroll;scroll-behavior:auto;scroll-snap-type:y mandatory;scrollbar-width:none}html::-webkit-scrollbar{display:none}body{width:100%;min-height:100%;margin:0!important;padding:0!important;overflow:visible}.book{width:100%;min-width:0;max-width:none;margin:0!important;padding:0!important;overflow-wrap:anywhere}.book-virtual-slot{height:100vh;min-height:100vh;max-height:100vh;margin:0!important;padding:0!important;scroll-snap-align:start;scroll-snap-stop:always}.book-page{box-sizing:border-box;display:flow-root;width:100%;height:100vh;min-height:100vh;max-height:100vh;margin:0!important;padding:3.5rem 2.25rem;overflow:hidden}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}'
 		: 'html,body{overflow:auto}.book{transform:none!important}';
 }
 
-function createPagedBoundaries(document: Document, pageHeight: number): number[] {
-	clearPagedGaps(document);
-	if (pageHeight <= 0) return [0];
+function createPagedPages(document: Document): void {
 	const book = document.querySelector<HTMLElement>('.book');
-	const frameWindow = document.defaultView;
-	if (!book || !frameWindow) return [0];
-	const pageGap = 56;
-	const pageInset = 56;
-	const usablePageHeight = pageHeight - (pageInset * 2);
-	let pageStart = 0;
-	let pageEnd = pageHeight - pageInset;
-	const starts = [0];
-	const blocks = Array.from(book.querySelectorAll<HTMLElement>(
-		':scope > .chapter > header, :scope > .chapter > p, :scope > .chapter > h2, :scope > .chapter > h3, :scope > .chapter > h4, :scope > .chapter > h5, :scope > .chapter > h6, :scope > .chapter > blockquote, :scope > .chapter > ul, :scope > .chapter > ol, :scope > .chapter > .scene-break',
-	));
-	for (const block of blocks) {
-		const top = block.getBoundingClientRect().top + frameWindow.scrollY;
-		const bottom = top + block.offsetHeight;
-		if (top >= pageEnd || (bottom > pageEnd && block.offsetHeight < usablePageHeight)) {
-			const nextPageStart = pageStart + pageHeight + pageGap;
-			const nextContentStart = nextPageStart + pageInset;
-			const gap = document.createElement('div');
-			gap.className = 'book-preview-page-gap';
-			gap.setAttribute('aria-hidden', 'true');
-			gap.style.height = `${Math.max(pageGap, nextContentStart - top)}px`;
-			block.before(gap);
-			starts.push(nextPageStart);
-			pageStart = nextPageStart;
-			pageEnd = pageStart + pageHeight - pageInset;
+	if (!book) return;
+	const chapters = Array.from(book.querySelectorAll<HTMLElement>(':scope > [data-section-id]'));
+	book.replaceChildren();
+	let page = appendPage(document, book, 0);
+	for (const [chapterIndex, chapter] of chapters.entries()) {
+		// A manuscript file is a chapter in the Book Model. Its opening should
+		// always begin on a fresh reader page, even when the prior chapter is
+		// short; this gives page navigation stable, meaningful targets.
+		if (chapterIndex > 0 && page.children.length > 0) page = appendPage(document, book, book.children.length);
+		let fragment = appendChapterFragment(document, page, chapter, true);
+		for (const child of Array.from(chapter.children)) {
+			fragment.append(child);
+			if (page.scrollHeight <= page.clientHeight || fragment.children.length === 1) continue;
+			fragment.removeChild(child);
+			page = appendPage(document, book, book.children.length);
+			fragment = appendChapterFragment(document, page, chapter, false);
+			fragment.append(child);
 		}
 	}
-	const documentHeight = Math.max(book.scrollHeight, document.documentElement.scrollHeight, document.body.scrollHeight);
-	let finalPageStart = starts[starts.length - 1] ?? 0;
-	while (finalPageStart + pageHeight < documentHeight) {
-		finalPageStart += pageHeight;
-		starts.push(finalPageStart);
+}
+
+function appendPage(document: Document, book: HTMLElement, index: number): HTMLElement {
+	const page = document.createElement('div');
+	page.className = 'book-page';
+	page.dataset.pageIndex = String(index);
+	book.append(page);
+	return page;
+}
+
+function appendChapterFragment(document: Document, page: HTMLElement, chapter: HTMLElement, includeIdentity: boolean): HTMLElement {
+	const fragment = document.createElement('section');
+	fragment.className = chapter.className;
+	if (includeIdentity) {
+		if (chapter.id) fragment.id = chapter.id;
+		if (chapter.dataset.sectionId) fragment.dataset.sectionId = chapter.dataset.sectionId;
 	}
-	return starts;
+	page.append(fragment);
+	return fragment;
 }
 
-function clearPagedGaps(document: Document): void {
-	document.querySelectorAll('.book-preview-page-gap').forEach((gap) => gap.remove());
-}
-
-function nearestPageIndex(pageStarts: number[], scrollTop: number): number {
-	return pageStarts.reduce((nearest, start, index) => Math.abs(start - scrollTop) < Math.abs((pageStarts[nearest] ?? 0) - scrollTop) ? index : nearest, 0);
+function restoreBookSource(document: Document, html: string): void {
+	const nextDocument = new DOMParser().parseFromString(html, 'text/html');
+	const book = document.querySelector<HTMLElement>('.book');
+	const sourceBook = nextDocument.querySelector<HTMLElement>('.book');
+	if (!book || !sourceBook) return;
+	book.replaceChildren(...Array.from(sourceBook.children, (element) => element.cloneNode(true)));
 }
 
 function restoreBookSections(document: Document): void {

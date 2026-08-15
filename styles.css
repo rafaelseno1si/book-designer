@@ -337,13 +337,18 @@
 	background: var(--background-secondary);
 }
 
+.book-preview-canvas.is-paged {
+	overflow: hidden;
+}
+
 .book-preview-device {
 	display: grid;
 	place-items: center;
 	position: relative;
+	box-sizing: border-box;
 	width: min(100%, 460px);
-	height: min(68vh, 700px);
-	min-height: 340px;
+	height: min(100%, 68vh, 700px);
+	min-height: 0;
 	padding: 18px;
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary);
@@ -351,37 +356,37 @@
 
 .book-preview-device[data-device='phone-narrow'] {
 	width: min(100%, 300px);
-	height: min(68vh, 620px);
+	height: min(100%, 68vh, 620px);
 }
 
 .book-preview-device[data-device='phone'] {
 	width: min(100%, 350px);
-	height: min(68vh, 680px);
+	height: min(100%, 68vh, 680px);
 }
 
 .book-preview-device[data-device='ereader-large'] {
 	width: min(100%, 540px);
-	height: min(68vh, 760px);
+	height: min(100%, 68vh, 760px);
 }
 
 .book-preview-device[data-device='tablet'] {
 	width: min(100%, 680px);
-	height: min(68vh, 760px);
+	height: min(100%, 68vh, 760px);
 }
 
 .book-preview-device.is-landscape {
 	width: min(100%, 680px);
-	height: min(58vh, 460px);
+	height: min(100%, 58vh, 460px);
 }
 
 .book-preview-device[data-device='phone-narrow'].is-landscape {
 	width: min(100%, 620px);
-	height: min(58vh, 300px);
+	height: min(100%, 58vh, 300px);
 }
 
 .book-preview-device[data-device='phone'].is-landscape {
 	width: min(100%, 680px);
-	height: min(58vh, 350px);
+	height: min(100%, 58vh, 350px);
 }
 
 .book-preview-paper {

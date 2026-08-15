@@ -22,20 +22,22 @@ export class ContinuousBookVirtualizer {
 		private readonly document: Document,
 		private readonly book: HTMLElement,
 		sections: VirtualSection[],
+		private readonly fixedItemHeight: number | null,
 	) { this.sections = sections; }
 
-	static create(document: Document, estimatedSectionHeight: number): ContinuousBookVirtualizer | null {
+	static create(document: Document, estimatedSectionHeight: number, selector = ':scope > [data-section-id]', fixedItemHeight: number | null = null): ContinuousBookVirtualizer | null {
 		const book = document.querySelector<HTMLElement>('.book');
 		if (!book) return null;
 		const templates = Array.from(book.querySelectorAll<HTMLTemplateElement>(':scope > template[data-book-section-template]'));
-		const existingSections = Array.from(book.querySelectorAll<HTMLElement>(':scope > [data-section-id]'));
-		const source = templates.length > 0
+		const existingSections = Array.from(book.querySelectorAll<HTMLElement>(selector));
+		const source = selector === ':scope > [data-section-id]' && templates.length > 0
 			? templates.map((template) => template.content.cloneNode(true) as DocumentFragment)
 			: existingSections.map((section) => cloneIntoFragment(document, section));
 		if (source.length === 0) return null;
-		const sections = source.map((content, index) => ({ content, height: estimatedSectionHeight, slot: createSlot(document, index, estimatedSectionHeight) }));
+		const itemHeight = fixedItemHeight ?? estimatedSectionHeight;
+		const sections = source.map((content, index) => ({ content, height: itemHeight, slot: createSlot(document, index, itemHeight) }));
 		book.replaceChildren(...sections.map((section) => section.slot));
-		return new ContinuousBookVirtualizer(document, book, sections);
+		return new ContinuousBookVirtualizer(document, book, sections, fixedItemHeight);
 	}
 
 	update(scrollTop: number, viewportHeight: number): void {
@@ -47,7 +49,7 @@ export class ContinuousBookVirtualizer {
 		for (const index of Array.from(this.rendered)) {
 			if (index < first || index > last) this.unmount(index);
 		}
-		this.scheduleMeasurement(scrollTop);
+		if (this.fixedItemHeight === null) this.scheduleMeasurement(scrollTop);
 	}
 
 	restoreAll(): void {
@@ -57,6 +59,20 @@ export class ContinuousBookVirtualizer {
 	}
 
 	dispose(): void { this.cancelMeasurement(); }
+
+	get count(): number { return this.sections.length; }
+
+	scrollToIndex(index: number): void {
+		const section = this.sections[Math.min(Math.max(index, 0), this.sections.length - 1)];
+		section?.slot.scrollIntoView({ block: 'start', behavior: 'auto' });
+	}
+
+	nearestIndex(scrollTop: number): number {
+		this.ensureOffsets();
+		const index = this.indexAtOffset(scrollTop);
+		const previous = Math.max(0, index - 1);
+		return Math.abs((this.offsets[previous] ?? 0) - scrollTop) < Math.abs((this.offsets[index] ?? 0) - scrollTop) ? previous : index;
+	}
 
 	private visibleRange(scrollTop: number, viewportHeight: number): { first: number; last: number } {
 		this.ensureOffsets();
@@ -70,7 +86,7 @@ export class ContinuousBookVirtualizer {
 		if (this.rendered.has(index)) return;
 		const section = this.sections[index];
 		if (!section) return;
-		section.slot.style.removeProperty('height');
+		if (this.fixedItemHeight === null) section.slot.style.removeProperty('height');
 		section.slot.replaceChildren(section.content.cloneNode(true));
 		this.rendered.add(index);
 	}
@@ -78,8 +94,10 @@ export class ContinuousBookVirtualizer {
 	private unmount(index: number): void {
 		const section = this.sections[index];
 		if (!section) return;
-		section.height = Math.max(1, section.slot.offsetHeight);
-		this.offsetsDirty = true;
+		if (this.fixedItemHeight === null) {
+			section.height = Math.max(1, section.slot.offsetHeight);
+			this.offsetsDirty = true;
+		}
 		section.slot.replaceChildren();
 		section.slot.style.height = `${section.height}px`;
 		this.rendered.delete(index);
