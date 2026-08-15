@@ -21,9 +21,12 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 	const preview = project?.preview;
 	const canvasRef = useRef<HTMLElement>(null);
+	const deviceRef = useRef<HTMLElement>(null);
 	const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-	const deviceDimensions = PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
-	const nativeDeviceSize = preview?.orientation === 'landscape'
+	const deviceDimensions = preview?.deviceId === 'custom'
+		? { width: preview.customDeviceWidth, height: preview.customDeviceHeight }
+		: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
+	const nativeDeviceSize = preview?.deviceId !== 'custom' && preview?.orientation === 'landscape'
 		? { width: deviceDimensions.height, height: deviceDimensions.width }
 		: deviceDimensions;
 	const autoDeviceScale = preview?.autoDeviceScale && canvasSize.width > 0 && canvasSize.height > 0
@@ -57,6 +60,20 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		observer.observe(canvas);
 		return () => observer.disconnect();
 	}, []);
+	useEffect(() => {
+		if (preview?.deviceId !== 'custom') return;
+		const device = deviceRef.current;
+		if (!device) return;
+		const observer = new ResizeObserver(() => {
+			const width = Math.round(device.offsetWidth);
+			const height = Math.round(device.offsetHeight);
+			if (width !== preview.customDeviceWidth || height !== preview.customDeviceHeight) {
+				projectStore.updatePreview({ customDeviceWidth: width, customDeviceHeight: height });
+			}
+		});
+		observer.observe(device);
+		return () => observer.disconnect();
+	}, [preview?.customDeviceHeight, preview?.customDeviceWidth, preview?.deviceId, projectStore]);
 	const updatePreviewLocation = (scrollTop: number, activeSectionId: string | null) => {
 		latestScrollTop.current = scrollTop;
 		projectStore.updatePreview({ scrollTop, activeSectionId });
@@ -67,19 +84,20 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 			{project && preview && !toolbarCollapsed && <div className="book-preview-controls" aria-label="Reader simulation controls">
 				<label><span>Device</span><select value={preview.deviceId} onChange={(event) => { const deviceId = event.currentTarget.value; if (isPreviewDeviceId(deviceId)) projectStore.updatePreview({ deviceId }); }}>{PREVIEW_DEVICE_IDS.map((deviceId) => <option key={deviceId} value={deviceId}>{PREVIEW_DEVICE_LABELS[deviceId]}</option>)}</select></label>
 				<label><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Continuous</option><option value="paged">Paged</option></select></label>
-				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview({ orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
+				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview(preview.deviceId === 'custom' ? { orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', customDeviceWidth: preview.customDeviceHeight, customDeviceHeight: preview.customDeviceWidth, pageIndex: 0 } : { orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
 				<div className="book-preview-settings">
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => !open)} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
 						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="130" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
 						<label className="book-preview-settings-range"><span>Device scale</span><input type="range" min="25" max="100" step="5" value={preview.deviceScale} onChange={(event) => projectStore.updatePreview({ deviceScale: Number(event.currentTarget.value), autoDeviceScale: false })} disabled={preview.autoDeviceScale} aria-valuetext={`${Math.round(effectiveDeviceScale)}%`} /><output>{Math.round(effectiveDeviceScale)}%</output></label>
 						<label className="book-preview-settings-checkbox"><input type="checkbox" checked={preview.autoDeviceScale} onChange={(event) => projectStore.updatePreview({ autoDeviceScale: event.currentTarget.checked })} /><span>Auto</span></label>
+						{preview.deviceId === 'custom' && <p className="book-preview-custom-size-hint">Drag the lower-right corner to resize<br />{preview.customDeviceWidth} × {preview.customDeviceHeight}</p>}
 					</div>}
 				</div>
 			</div>}
 			<button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button>
 		</header>
-		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
+		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
 			{!project ? <PreviewMessage title="No active project" message="Create a Book Project from a vault folder in Book Designer." />
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
