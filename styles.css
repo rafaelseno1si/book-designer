@@ -361,7 +361,7 @@
 	box-shadow: 0 10px 24px rgb(0 0 0 / 0.2);
 }
 
-.book-preview-settings-popover label {
+.book-preview-settings-range {
 	display: grid;
 	grid-template-columns: 1fr auto;
 	gap: 8px;
@@ -371,7 +371,7 @@
 	text-transform: uppercase;
 }
 
-.book-preview-settings-popover label span {
+.book-preview-settings-range span {
 	grid-column: 1 / -1;
 }
 
@@ -385,6 +385,20 @@
 	color: var(--text-normal);
 	font-size: 0.8rem;
 	text-transform: none;
+}
+
+.book-preview-settings-checkbox {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	margin-top: 12px;
+	color: var(--text-normal);
+	font-size: 0.85rem;
+	text-transform: none;
+}
+
+.book-preview-settings-checkbox input {
+	margin: 0;
 }
 
 .book-preview-orientation-button:hover {
@@ -433,6 +447,17 @@
 	overflow: hidden;
 }
 
+.book-preview-device-stage {
+	position: relative;
+	flex: 0 0 auto;
+}
+
+.book-preview-device-stage > .book-preview-device {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+}
+
 .book-preview-device {
 	display: grid;
 	place-items: center;
@@ -444,6 +469,8 @@
 	padding: 18px;
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary);
+	transform-origin: center;
+	will-change: transform;
 }
 
 .book-preview-device[data-device='phone-narrow'] {

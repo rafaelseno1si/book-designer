@@ -21,7 +21,7 @@ describe('BookProjectStore', () => {
 			activeProjectId: 'project-a',
 		}, 'phone');
 
-		expect(registry.projects[0]?.preview).toMatchObject({ mode: 'paged', orientation: 'portrait', pageIndex: 0 });
+		expect(registry.projects[0]?.preview).toMatchObject({ mode: 'paged', orientation: 'portrait', pageIndex: 0, deviceScale: 100, autoDeviceScale: true });
 	});
 
 	it('persists only project configuration and preserves per-project settings when switching', async () => {

@@ -33,6 +33,8 @@ export interface BookProjectDesign {
 export interface BookProjectPreviewState {
 	deviceId: PreviewDeviceId;
 	readerScale: number;
+	deviceScale: number;
+	autoDeviceScale: boolean;
 	mode: PreviewMode;
 	orientation: PreviewOrientation;
 	pageIndex: number;
@@ -228,16 +230,19 @@ function isPreviewDevice(value: unknown): value is PreviewDeviceId { return type
 function isPreviewMode(value: unknown): value is PreviewMode { return value === 'continuous' || value === 'paged'; }
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 130 ? value : 100; }
+function validDeviceScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 25 && value <= 100 ? value : 100; }
 function validScrollTop(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0; }
 function validPageIndex(value: unknown): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0; }
 function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
-	return { deviceId, readerScale: 100, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+	return { deviceId, readerScale: 100, deviceScale: 100, autoDeviceScale: true, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
 function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {
 	const deviceId = isPreviewDevice(value.deviceId) ? value.deviceId : defaultDevice;
 	return {
 		deviceId,
 		readerScale: validScale(value.readerScale),
+		deviceScale: validDeviceScale(value.deviceScale),
+		autoDeviceScale: typeof value.autoDeviceScale === 'boolean' ? value.autoDeviceScale : true,
 		mode: isPreviewMode(value.mode) ? value.mode : deviceId === 'ereader-6' ? 'paged' : 'continuous',
 		orientation: isPreviewOrientation(value.orientation) ? value.orientation : 'portrait',
 		pageIndex: validPageIndex(value.pageIndex),

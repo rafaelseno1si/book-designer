@@ -6,7 +6,7 @@ import {
 	type RefObject,
 } from 'react';
 import type { PreviewMode, BookProjectStore } from '../plugin/project-store';
-import { PREVIEW_DEVICE_IDS, PREVIEW_DEVICE_LABELS, isPreviewDeviceId } from '../plugin/settings';
+import { PREVIEW_DEVICE_DIMENSIONS, PREVIEW_DEVICE_IDS, PREVIEW_DEVICE_LABELS, isPreviewDeviceId } from '../plugin/settings';
 import { ContinuousBookVirtualizer } from './continuous-book-virtualizer';
 import { useBookProject } from './useBookProject';
 
@@ -20,10 +20,43 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 	const preview = project?.preview;
-	const deviceStyle = { '--book-preview-reader-scale': `${preview?.readerScale ?? 100}%` } as CSSProperties;
+	const canvasRef = useRef<HTMLElement>(null);
+	const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+	const deviceDimensions = PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
+	const nativeDeviceSize = preview?.orientation === 'landscape'
+		? { width: deviceDimensions.height, height: deviceDimensions.width }
+		: deviceDimensions;
+	const autoDeviceScale = preview?.autoDeviceScale && canvasSize.width > 0 && canvasSize.height > 0
+		? Math.min(100, (canvasSize.width / nativeDeviceSize.width) * 100, (canvasSize.height / nativeDeviceSize.height) * 100)
+		: null;
+	const effectiveDeviceScale = autoDeviceScale ?? preview?.deviceScale ?? 100;
+	const deviceStyle = {
+		'--book-preview-reader-scale': `${preview?.readerScale ?? 100}%`,
+		width: `${nativeDeviceSize.width}px`,
+		height: `${nativeDeviceSize.height}px`,
+		transform: `translate(-50%, -50%) scale(${effectiveDeviceScale / 100})`,
+	} as CSSProperties;
+	const deviceStageStyle = {
+		width: `${nativeDeviceSize.width * (effectiveDeviceScale / 100)}px`,
+		height: `${nativeDeviceSize.height * (effectiveDeviceScale / 100)}px`,
+	} as CSSProperties;
 
 	useEffect(() => { latestScrollTop.current = preview?.scrollTop ?? 0; }, [project?.id]);
 	useEffect(() => { setPageCount(1); }, [project?.id, preview?.mode, preview?.orientation]);
+	useEffect(() => {
+		const canvas = canvasRef.current;
+		if (!canvas) return;
+		const updateSize = () => {
+			const style = window.getComputedStyle(canvas);
+			const horizontalPadding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+			const verticalPadding = Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+			setCanvasSize({ width: Math.max(0, canvas.clientWidth - horizontalPadding), height: Math.max(0, canvas.clientHeight - verticalPadding) });
+		};
+		updateSize();
+		const observer = new ResizeObserver(updateSize);
+		observer.observe(canvas);
+		return () => observer.disconnect();
+	}, []);
 	const updatePreviewLocation = (scrollTop: number, activeSectionId: string | null) => {
 		latestScrollTop.current = scrollTop;
 		projectStore.updatePreview({ scrollTop, activeSectionId });
@@ -38,13 +71,15 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				<div className="book-preview-settings">
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => !open)} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
-						<label><span>Font size</span><input type="range" min="85" max="130" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
+						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="130" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
+						<label className="book-preview-settings-range"><span>Device scale</span><input type="range" min="25" max="100" step="5" value={preview.deviceScale} onChange={(event) => projectStore.updatePreview({ deviceScale: Number(event.currentTarget.value), autoDeviceScale: false })} disabled={preview.autoDeviceScale} aria-valuetext={`${Math.round(effectiveDeviceScale)}%`} /><output>{Math.round(effectiveDeviceScale)}%</output></label>
+						<label className="book-preview-settings-checkbox"><input type="checkbox" checked={preview.autoDeviceScale} onChange={(event) => projectStore.updatePreview({ autoDeviceScale: event.currentTarget.checked })} /><span>Auto</span></label>
 					</div>}
 				</div>
 			</div>}
 			<button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button>
 		</header>
-		<main className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><section className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
+		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
 			{!project ? <PreviewMessage title="No active project" message="Create a Book Project from a vault folder in Book Designer." />
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
@@ -55,7 +90,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				<span className="book-preview-page-indicator" aria-live="polite">{Math.min(preview.pageIndex + 1, pageCount)} / {pageCount}</span>
 				<button type="button" className="book-preview-page-turn is-next" onClick={() => projectStore.updatePreview({ pageIndex: Math.min(pageCount - 1, preview.pageIndex + 1) })} disabled={preview.pageIndex >= pageCount - 1} aria-label="Next page">›</button>
 			</>}
-		</section></main>
+		</section></div></main>
 	</section>;
 }
 

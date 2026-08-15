@@ -26,6 +26,14 @@ export const PREVIEW_DEVICE_LABELS: Record<PreviewDeviceId, string> = {
 	tablet: 'Tablet',
 };
 
+export const PREVIEW_DEVICE_DIMENSIONS: Record<PreviewDeviceId, { width: number; height: number }> = {
+	'phone-narrow': { width: 300, height: 620 },
+	phone: { width: 350, height: 680 },
+	'ereader-6': { width: 460, height: 700 },
+	'ereader-large': { width: 540, height: 760 },
+	tablet: { width: 680, height: 760 },
+};
+
 export function isPreviewDeviceId(value: string): value is PreviewDeviceId {
 	return PREVIEW_DEVICE_IDS.some((deviceId) => deviceId === value);
 }
