@@ -276,6 +276,13 @@
 
 .book-preview-toolbar {
 	padding: 10px 14px;
+	justify-content: flex-start;
+	flex-wrap: wrap;
+}
+
+.book-preview-toolbar.is-collapsed {
+	justify-content: flex-end;
+	padding: 4px 10px;
 }
 
 .book-preview-toolbar p,
@@ -287,14 +294,17 @@
 .book-preview-controls {
 	display: flex;
 	align-items: end;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
 	gap: 10px;
+	min-width: 0;
 }
 
 .book-preview-orientation-button {
 	display: grid;
 	place-items: center;
-	width: 40px;
-	min-height: 40px;
+	width: 32px;
+	min-height: 32px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 50%;
 	padding: 0;
@@ -304,11 +314,86 @@
 	line-height: 1;
 }
 
+.book-preview-settings,
+.book-preview-settings-button,
+.book-preview-toolbar-toggle {
+	position: relative;
+}
+
+.book-preview-settings-button,
+.book-preview-toolbar-toggle {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	min-height: 32px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 50%;
+	padding: 0;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 1rem;
+	line-height: 1;
+}
+
+.book-preview-toolbar-toggle {
+	margin-left: auto;
+}
+
+.book-preview-toolbar.is-collapsed .book-preview-toolbar-toggle {
+	margin-left: 0;
+}
+
+.book-preview-settings-button:hover,
+.book-preview-toolbar-toggle:hover {
+	background: var(--background-modifier-hover);
+}
+
+.book-preview-settings-popover {
+	position: absolute;
+	z-index: 5;
+	top: calc(100% + 8px);
+	right: 0;
+	width: 180px;
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	box-shadow: 0 10px 24px rgb(0 0 0 / 0.2);
+}
+
+.book-preview-settings-popover label {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 8px;
+	align-items: center;
+	color: var(--text-faint);
+	font-size: 0.78rem;
+	text-transform: uppercase;
+}
+
+.book-preview-settings-popover label span {
+	grid-column: 1 / -1;
+}
+
+.book-preview-settings-popover input[type='range'] {
+	width: 100%;
+	min-height: 28px;
+	accent-color: var(--interactive-accent);
+}
+
+.book-preview-settings-popover output {
+	color: var(--text-normal);
+	font-size: 0.8rem;
+	text-transform: none;
+}
+
 .book-preview-orientation-button:hover {
 	background: var(--background-modifier-hover);
 }
 
 .book-preview-orientation-button:focus-visible,
+.book-preview-settings-button:focus-visible,
+.book-preview-toolbar-toggle:focus-visible,
 .book-preview-page-turn:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
@@ -317,15 +402,22 @@
 .book-preview-controls label {
 	display: grid;
 	gap: 5px;
-	min-width: 130px;
+	min-width: 108px;
 	color: var(--text-faint);
 	font-size: 0.78rem;
 	text-transform: uppercase;
 }
 
 .book-preview-controls input[type='range'] {
-	min-height: 40px;
+	width: 96px;
+	min-height: 32px;
 	accent-color: var(--interactive-accent);
+}
+
+.book-preview-controls select {
+	min-height: 32px;
+	padding: 0 8px;
+	font-size: 0.9rem;
 }
 
 .book-preview-canvas {

@@ -17,6 +17,8 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const project = snapshot.activeProject;
 	const latestScrollTop = useRef(project?.preview.scrollTop ?? 0);
 	const [pageCount, setPageCount] = useState(1);
+	const [settingsOpen, setSettingsOpen] = useState(false);
+	const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 	const preview = project?.preview;
 	const deviceStyle = { '--book-preview-reader-scale': `${preview?.readerScale ?? 100}%` } as CSSProperties;
 
@@ -28,14 +30,19 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	};
 
 	return <section className="book-preview-shell" aria-label="Book Preview">
-		<header className="book-preview-toolbar">
-			<h1>Book Preview</h1>
-			{project && preview && <div className="book-preview-controls" aria-label="Reader simulation controls">
+		<header className={`book-preview-toolbar ${toolbarCollapsed ? 'is-collapsed' : ''}`}>
+			{project && preview && !toolbarCollapsed && <div className="book-preview-controls" aria-label="Reader simulation controls">
 				<label><span>Device</span><select value={preview.deviceId} onChange={(event) => { const deviceId = event.currentTarget.value; if (isPreviewDeviceId(deviceId)) projectStore.updatePreview({ deviceId }); }}>{PREVIEW_DEVICE_IDS.map((deviceId) => <option key={deviceId} value={deviceId}>{PREVIEW_DEVICE_LABELS[deviceId]}</option>)}</select></label>
 				<label><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Continuous</option><option value="paged">Paged</option></select></label>
 				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview({ orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
-				<label><span>Reader size</span><input type="range" min="85" max="130" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /></label>
+				<div className="book-preview-settings">
+					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => !open)} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
+					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
+						<label><span>Font size</span><input type="range" min="85" max="130" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
+					</div>}
+				</div>
 			</div>}
+			<button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button>
 		</header>
 		<main className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><section className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
 			{!project ? <PreviewMessage title="No active project" message="Create a Book Project from a vault folder in Book Designer." />
