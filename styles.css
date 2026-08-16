@@ -337,6 +337,9 @@
 
 .book-preview-toolbar-toggle {
 	margin-left: auto;
+	/* Controls include a label above the input; align the chevron with the
+	 * actual input row rather than vertically centering it against both rows. */
+	align-self: flex-end;
 }
 
 .book-preview-toolbar.is-collapsed .book-preview-toolbar-toggle {
@@ -401,6 +404,106 @@
 	margin: 0;
 }
 
+.book-preview-mockup-actions {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 6px;
+	margin-top: 12px;
+}
+
+.book-preview-mockup-actions button {
+	min-height: 30px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	padding: 0 8px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font: inherit;
+	font-size: 0.8rem;
+}
+
+.book-preview-mockup-actions button:hover {
+	background: var(--background-modifier-hover);
+}
+
+.book-preview-mockup-actions .is-danger {
+	color: var(--text-error);
+}
+
+.book-preview-import-input {
+	display: none;
+}
+
+.book-preview-mockup-dialog-backdrop {
+	position: fixed;
+	z-index: 1000;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: 20px;
+	background: rgb(0 0 0 / 0.48);
+}
+
+.book-preview-mockup-dialog {
+	width: min(560px, 100%);
+	max-height: min(700px, calc(100vh - 40px));
+	overflow: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	padding: 20px;
+	background: var(--background-primary);
+	box-shadow: 0 18px 48px rgb(0 0 0 / 0.35);
+}
+
+.book-preview-mockup-dialog h2 {
+	margin: 0;
+	font-size: 1.1rem;
+}
+
+.book-preview-mockup-dialog > p {
+	margin: 8px 0 16px;
+	color: var(--text-muted);
+}
+
+.book-preview-mockup-dialog label {
+	display: grid;
+	gap: 6px;
+	color: var(--text-muted);
+	font-size: 0.8rem;
+}
+
+.book-preview-mockup-dialog label input {
+	width: 100%;
+}
+
+.book-preview-mockup-dialog-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.book-preview-mockup-dialog-actions button {
+	min-height: 32px;
+}
+
+.book-preview-mockup-dialog-guide {
+	margin: 16px 0 0;
+	padding: 12px;
+	white-space: pre-wrap;
+	font-family: var(--font-monospace);
+	font-size: 0.75rem;
+	line-height: 1.5;
+	color: var(--text-muted);
+	background: var(--background-secondary);
+	border-radius: 4px;
+}
+
+.book-preview-mockup-dialog-message {
+	margin: 12px 0 0 !important;
+	color: var(--text-normal) !important;
+}
+
 .book-preview-custom-size-hint {
 	margin: 12px 0 0;
 	color: var(--text-muted);
@@ -441,6 +544,27 @@
 	font-size: 0.9rem;
 }
 
+.book-preview-controls .book-preview-device-control {
+	min-width: 0;
+}
+
+.book-preview-controls .book-preview-device-control select {
+	/* Keep the closed field compact while leaving the platform's native option
+	 * list free to use its normal horizontal width. */
+	width: calc(7ch + 32px);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.book-preview-controls .book-preview-mode-control {
+	min-width: 0;
+}
+
+.book-preview-controls .book-preview-mode-control select {
+	width: calc(7ch + 32px);
+}
+
 .book-preview-canvas {
 	display: grid;
 	place-items: center;
@@ -474,6 +598,19 @@
 	resize: both;
 }
 
+.book-preview-device[data-device='imported'] {
+	display: block;
+	padding: 0;
+	border: 0;
+	background: transparent;
+}
+
+.book-preview-device[data-device='imported'] .book-preview-screen {
+	border: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
 .book-preview-device {
 	display: grid;
 	place-items: center;
@@ -487,6 +624,78 @@
 	background: var(--background-primary);
 	transform-origin: center;
 	will-change: transform;
+}
+
+.book-preview-screen {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.book-preview-device[data-mockup='kindle-paperwhite'] {
+	display: block;
+	overflow: visible;
+	padding: 0;
+	border: 1px solid #090909;
+	border-radius: 3.15%;
+	background: linear-gradient(180deg, #252525 0%, #171717 40%, #101010 100%);
+	box-shadow: 0 1px 1px rgb(255 255 255 / 0.06) inset, 0 -2px 3px rgb(0 0 0 / 0.7) inset, 0 9px 23px rgb(0 0 0 / 0.38), 0 2px 4px rgb(0 0 0 / 0.45);
+}
+
+.book-preview-device[data-mockup='kindle-paperwhite']::before {
+	position: absolute;
+	inset: 0.5%;
+	border: 1px solid rgb(255 255 255 / 0.04);
+	border-radius: inherit;
+	content: '';
+	pointer-events: none;
+}
+
+.book-preview-device[data-mockup='kindle-paperwhite'] .book-preview-screen {
+	position: absolute;
+	top: var(--book-preview-screen-top);
+	left: var(--book-preview-screen-left);
+	width: var(--book-preview-screen-width);
+	height: var(--book-preview-screen-height);
+	border: 2px solid #111;
+	border-radius: var(--book-preview-screen-radius);
+	background: radial-gradient(circle at 50% 35%, rgb(255 255 255 / 0.18), transparent 58%), #e9e8df;
+	box-shadow: 0 2px 4px rgb(0 0 0 / 0.85) inset, 0 1px 2px rgb(255 255 255 / 0.05);
+}
+
+.book-preview-device[data-mockup='kindle-paperwhite'] .book-preview-screen::after {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	border-radius: inherit;
+	background-image: repeating-linear-gradient(0deg, rgb(0 0 0 / 0.035) 0, rgb(0 0 0 / 0.035) 1px, transparent 1px, transparent 3px);
+	content: '';
+	opacity: 0.11;
+	pointer-events: none;
+}
+
+.book-preview-device[data-mockup='kindle-paperwhite'] .book-preview-frame {
+	border: 0;
+	box-shadow: none;
+}
+
+.book-preview-mockup-logo {
+	position: absolute;
+	bottom: 3.5%;
+	left: 0;
+	right: 0;
+	color: #7d7d7d;
+	font-family: system-ui, sans-serif;
+	font-size: 4%;
+	font-weight: 500;
+	letter-spacing: -0.08em;
+	line-height: 1;
+	text-align: center;
+	text-shadow: 0 1px 0 #000;
+	user-select: none;
 }
 
 .book-preview-device[data-device='phone-narrow'] {
@@ -544,6 +753,14 @@
 	border: 1px solid var(--book-preview-paper-edge);
 	background: var(--book-preview-paper);
 	box-shadow: 0 14px 30px rgb(0 0 0 / 0.12);
+}
+
+.book-preview-imported-mockup {
+	display: block;
+	box-sizing: border-box;
+	border: 0;
+	box-shadow: none;
+	background: transparent;
 }
 
 .book-preview-page-turn {

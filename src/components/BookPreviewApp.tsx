@@ -6,6 +6,8 @@ import {
 	type RefObject,
 } from 'react';
 import type { PreviewMode, BookProjectStore } from '../plugin/project-store';
+import { previewMockup } from '../core/mockups/preview-mockup';
+import { importHtmlMockup, type ImportedHtmlMockup } from '../core/mockups/html-mockup-import';
 import { PREVIEW_DEVICE_DIMENSIONS, PREVIEW_DEVICE_IDS, PREVIEW_DEVICE_LABELS, isPreviewDeviceId } from '../plugin/settings';
 import { ContinuousBookVirtualizer } from './continuous-book-virtualizer';
 import { useBookProject } from './useBookProject';
@@ -19,12 +21,20 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const [pageCount, setPageCount] = useState(1);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
+	const [mockupDialog, setMockupDialog] = useState<{ editingId: string | null; name: string; error: string | null } | null>(null);
 	const preview = project?.preview;
+	const mockup = previewMockup(preview?.deviceId === 'kindle-paperwhite' ? 'kindle-paperwhite' : preview?.mockupId ?? 'plain');
 	const canvasRef = useRef<HTMLElement>(null);
 	const deviceRef = useRef<HTMLElement>(null);
+	const mockupDialogFileRef = useRef<HTMLInputElement>(null);
+	const selectedImportedMockup = preview?.deviceId === 'imported'
+		? snapshot.registry.mockups.find((candidate) => candidate.id === preview.importedMockupId) ?? null
+		: null;
 	const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 	const deviceDimensions = preview?.deviceId === 'custom'
 		? { width: preview.customDeviceWidth, height: preview.customDeviceHeight }
+		: selectedImportedMockup
+			? { width: selectedImportedMockup.width, height: selectedImportedMockup.height }
 		: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
 	const nativeDeviceSize = preview?.deviceId !== 'custom' && preview?.orientation === 'landscape'
 		? { width: deviceDimensions.height, height: deviceDimensions.width }
@@ -35,6 +45,11 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const effectiveDeviceScale = autoDeviceScale ?? preview?.deviceScale ?? 100;
 	const deviceStyle = {
 		'--book-preview-reader-scale': `${preview?.readerScale ?? 100}%`,
+		'--book-preview-screen-top': `${mockup.screen.top}%`,
+		'--book-preview-screen-left': `${mockup.screen.left}%`,
+		'--book-preview-screen-width': `${mockup.screen.width}%`,
+		'--book-preview-screen-height': `${mockup.screen.height}%`,
+		'--book-preview-screen-radius': `${mockup.screen.borderRadius}%`,
 		width: `${nativeDeviceSize.width}px`,
 		height: `${nativeDeviceSize.height}px`,
 		transform: `translate(-50%, -50%) scale(${effectiveDeviceScale / 100})`,
@@ -78,42 +93,112 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		latestScrollTop.current = scrollTop;
 		projectStore.updatePreview({ scrollTop, activeSectionId });
 	};
+	const openMockupDialog = (editing: ImportedHtmlMockup | null = null) => {
+		setSettingsOpen(false);
+		setMockupDialog({ editingId: editing?.id ?? null, name: editing?.name ?? '', error: null });
+	};
+	const importMockupFile = async (file: File) => {
+		if (!mockupDialog) return;
+		const result = importHtmlMockup(await file.text(), mockupDialog.name.trim() || file.name);
+		if (!result.ok) {
+			setMockupDialog({ ...mockupDialog, error: result.error });
+			return;
+		}
+		if (mockupDialog.editingId) projectStore.replaceImportedMockup(mockupDialog.editingId, result.mockup);
+		else projectStore.addImportedMockup(result.mockup);
+		const mockupId = mockupDialog.editingId ?? result.mockup.id;
+		projectStore.updatePreview({ deviceId: 'imported', mockupId: 'plain', importedMockupId: mockupId, pageIndex: 0 });
+		setMockupDialog(null);
+	};
+	const copyMockupInstructions = async () => {
+		const instructions = MOCKUP_IMPORT_INSTRUCTIONS;
+		try {
+			await navigator.clipboard.writeText(instructions);
+			setMockupDialog((dialog) => dialog ? { ...dialog, error: 'Instructions copied to the clipboard.' } : dialog);
+		} catch {
+			setMockupDialog((dialog) => dialog ? { ...dialog, error: 'Unable to copy automatically. Select the guide text below instead.' } : dialog);
+		}
+	};
 
 	return <section className="book-preview-shell" aria-label="Book Preview">
 		<header className={`book-preview-toolbar ${toolbarCollapsed ? 'is-collapsed' : ''}`}>
 			{project && preview && !toolbarCollapsed && <div className="book-preview-controls" aria-label="Reader simulation controls">
-				<label><span>Device</span><select value={preview.deviceId} onChange={(event) => { const deviceId = event.currentTarget.value; if (isPreviewDeviceId(deviceId)) projectStore.updatePreview({ deviceId }); }}>{PREVIEW_DEVICE_IDS.map((deviceId) => <option key={deviceId} value={deviceId}>{PREVIEW_DEVICE_LABELS[deviceId]}</option>)}</select></label>
-				<label><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Continuous</option><option value="paged">Paged</option></select></label>
+				<label className="book-preview-device-control"><span>Device</span><select value={selectedImportedMockup ? `imported:${selectedImportedMockup.id}` : preview.deviceId} onChange={(event) => {
+					const value = event.currentTarget.value;
+					if (value === '__import_mockup__') { openMockupDialog(); return; }
+					if (value.startsWith('imported:')) {
+						projectStore.updatePreview({ deviceId: 'imported', mockupId: 'plain', importedMockupId: value.slice('imported:'.length), pageIndex: 0 });
+						return;
+					}
+					if (isPreviewDeviceId(value) && value !== 'imported') projectStore.updatePreview({ deviceId: value, mockupId: value === 'kindle-paperwhite' ? 'kindle-paperwhite' : 'plain', importedMockupId: null, pageIndex: 0 });
+				}}>{PREVIEW_DEVICE_IDS.filter((deviceId) => deviceId !== 'imported').map((deviceId) => <option key={deviceId} value={deviceId}>{PREVIEW_DEVICE_LABELS[deviceId]}</option>)}
+					<option value="__import_mockup__">Import HTML/CSS mockup…</option>
+					{snapshot.registry.mockups.length > 0 && <optgroup label="Imported mockups">{snapshot.registry.mockups.map((candidate) => <option key={candidate.id} value={`imported:${candidate.id}`}>{candidate.name}</option>)}</optgroup>}
+				</select></label>
+				<label className="book-preview-mode-control"><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Scroll</option><option value="paged">Paged</option></select></label>
 				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview(preview.deviceId === 'custom' ? { orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', customDeviceWidth: preview.customDeviceHeight, customDeviceHeight: preview.customDeviceWidth, pageIndex: 0 } : { orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
 				<div className="book-preview-settings">
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => !open)} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
-						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="130" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
+						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="800" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
 						<label className="book-preview-settings-range"><span>Device scale</span><input type="range" min="25" max="100" step="5" value={preview.deviceScale} onChange={(event) => projectStore.updatePreview({ deviceScale: Number(event.currentTarget.value), autoDeviceScale: false })} disabled={preview.autoDeviceScale} aria-valuetext={`${Math.round(effectiveDeviceScale)}%`} /><output>{Math.round(effectiveDeviceScale)}%</output></label>
 						<label className="book-preview-settings-checkbox"><input type="checkbox" checked={preview.autoDeviceScale} onChange={(event) => projectStore.updatePreview({ autoDeviceScale: event.currentTarget.checked })} /><span>Auto</span></label>
+						{selectedImportedMockup && <div className="book-preview-mockup-actions">
+							<button type="button" onClick={() => openMockupDialog(selectedImportedMockup)}>Edit mockup</button>
+							<button type="button" className="is-danger" onClick={() => projectStore.deleteImportedMockup(selectedImportedMockup.id)}>Delete mockup</button>
+						</div>}
 						{preview.deviceId === 'custom' && <p className="book-preview-custom-size-hint">Drag the lower-right corner to resize<br />{preview.customDeviceWidth} × {preview.customDeviceHeight}</p>}
 					</div>}
 				</div>
 			</div>}
 			<button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button>
 		</header>
-		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} style={deviceStyle} aria-label="Book preview viewport">
+		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} data-mockup={mockup.id} style={deviceStyle} aria-label="Book preview viewport">
+			<div className="book-preview-screen">
 			{!project ? <PreviewMessage title="No active project" message="Create a Book Project from a vault folder in Book Designer." />
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={project.id} html={snapshot.runtime.renderedHtml} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+			</div>
+			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 			{preview?.mode === 'paged' && <>
 				<button type="button" className="book-preview-page-turn is-previous" onClick={() => projectStore.updatePreview({ pageIndex: Math.max(0, preview.pageIndex - 1) })} disabled={preview.pageIndex === 0} aria-label="Previous page">‹</button>
 				<span className="book-preview-page-indicator" aria-live="polite">{Math.min(preview.pageIndex + 1, pageCount)} / {pageCount}</span>
 				<button type="button" className="book-preview-page-turn is-next" onClick={() => projectStore.updatePreview({ pageIndex: Math.min(pageCount - 1, preview.pageIndex + 1) })} disabled={preview.pageIndex >= pageCount - 1} aria-label="Next page">›</button>
 			</>}
 		</section></div></main>
+		{mockupDialog && <MockupImportDialog dialog={mockupDialog} fileInputRef={mockupDialogFileRef} onClose={() => setMockupDialog(null)} onCopyInstructions={() => { void copyMockupInstructions(); }} onNameChange={(name) => setMockupDialog({ ...mockupDialog, name, error: null })} onChooseFile={() => mockupDialogFileRef.current?.click()} onFile={(file) => { if (file) void importMockupFile(file); }} />}
 	</section>;
+}
+
+const MOCKUP_IMPORT_INSTRUCTIONS = `Book Designer HTML/CSS mockup guide\n\n1. Declare the mockup's fixed native dimensions on <html>:\n   <html data-book-designer-width="390" data-book-designer-height="844">\n\n2. Include exactly one empty screen slot where the book belongs:\n   <div data-book-designer-screen></div>\n\n3. Position and size that slot with your CSS. Keep the mockup body at its fixed native dimensions; Book Designer scales the complete mockup without reflowing it.\n\nFor safety, scripts, event attributes, external URLs, CSS imports, and nested frames are removed during import.`;
+
+function MockupImportDialog({ dialog, fileInputRef, onClose, onCopyInstructions, onNameChange, onChooseFile, onFile }: {
+	dialog: { editingId: string | null; name: string; error: string | null };
+	fileInputRef: RefObject<HTMLInputElement | null>;
+	onClose: () => void;
+	onCopyInstructions: () => void;
+	onNameChange: (name: string) => void;
+	onChooseFile: () => void;
+	onFile: (file: File | null) => void;
+}) {
+	return <div className="book-preview-mockup-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+		<section className="book-preview-mockup-dialog" role="dialog" aria-modal="true" aria-labelledby="book-preview-mockup-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+			<h2 id="book-preview-mockup-dialog-title">{dialog.editingId ? 'Edit mockup' : 'Import mockup'}</h2>
+			<p>Import a self-contained HTML/CSS device frame. The book preview is mounted into its screen slot.</p>
+			<label><span>Mockup name</span><input value={dialog.name} onChange={(event) => onNameChange(event.currentTarget.value)} placeholder="Use the file name" autoFocus /></label>
+			<div className="book-preview-mockup-dialog-actions"><button type="button" onClick={onChooseFile}>{dialog.editingId ? 'Replace HTML/CSS file' : 'Choose HTML/CSS file'}</button><button type="button" onClick={onCopyInstructions}>Copy instructions</button><button type="button" onClick={onClose}>Cancel</button></div>
+			<input ref={fileInputRef} className="book-preview-import-input" type="file" accept=".html,.htm,.xhtml,text/html" onChange={(event) => { const file = event.currentTarget.files?.[0] ?? null; event.currentTarget.value = ''; onFile(file); }} />
+			<pre className="book-preview-mockup-dialog-guide">{MOCKUP_IMPORT_INSTRUCTIONS}</pre>
+			{dialog.error && <p className="book-preview-mockup-dialog-message">{dialog.error}</p>}
+		</section>
+	</div>;
 }
 
 function BookPreviewFrame({
 	html,
+	mockupHtml,
 	mode,
 	pageIndex,
 	latestScrollTop,
@@ -122,6 +207,7 @@ function BookPreviewFrame({
 	onPageIndexChange,
 }: {
 	html: string;
+	mockupHtml: string | null;
 	mode: PreviewMode;
 	pageIndex: number;
 	latestScrollTop: RefObject<number>;
@@ -130,11 +216,16 @@ function BookPreviewFrame({
 	onPageIndexChange: (pageIndex: number) => void;
 }) {
 	const frameRef = useRef<HTMLIFrameElement>(null);
+	const shellRef = useRef<HTMLIFrameElement>(null);
 	const renderedHtml = useRef('');
 	const loaded = useRef(false);
 	const scrollTimer = useRef<number | null>(null);
 	const resizeObserver = useRef<ResizeObserver | null>(null);
 	const frameCleanup = useRef<(() => void) | null>(null);
+	const mockupMountTimer = useRef<number | null>(null);
+	const previewFrameReadyTimer = useRef<number | null>(null);
+	const mockupMountAttempts = useRef(0);
+	const initializedFrame = useRef<HTMLIFrameElement | null>(null);
 	const pageLayoutFrame = useRef<number | null>(null);
 	const virtualizer = useRef<ContinuousBookVirtualizer | null>(null);
 	const modeRef = useRef(mode);
@@ -149,6 +240,8 @@ function BookPreviewFrame({
 		resizeObserver.current?.disconnect();
 		frameCleanup.current?.();
 		virtualizer.current?.dispose();
+		if (mockupMountTimer.current !== null) window.clearTimeout(mockupMountTimer.current);
+		if (previewFrameReadyTimer.current !== null) window.clearTimeout(previewFrameReadyTimer.current);
 	}, []);
 	useEffect(() => { modeRef.current = mode; }, [mode]);
 	useEffect(() => { pageIndexRef.current = pageIndex; }, [pageIndex]);
@@ -214,6 +307,11 @@ function BookPreviewFrame({
 		const frame = frameRef.current;
 		const frameWindow = frame?.contentWindow;
 		if (!frame || !frameWindow) return;
+		if (initializedFrame.current === frame) return;
+		// An iframe's initial about:blank document can report as loaded before
+		// srcdoc has been parsed. Do not initialize that empty document.
+		if (!frame.contentDocument?.querySelector('.book')) return;
+		initializedFrame.current = frame;
 		frameCleanup.current?.();
 		loaded.current = true;
 		renderedHtml.current = html;
@@ -257,7 +355,54 @@ function BookPreviewFrame({
 		};
 	};
 
-	return <iframe ref={frameRef} className="book-preview-frame" sandbox="allow-same-origin" title="Book preview" srcDoc={initialDocument} onLoad={handleLoad} />;
+	const handleMockupLoad = () => {
+		const shellDocument = shellRef.current?.contentDocument;
+		const slot = shellDocument?.querySelector<HTMLElement>('[data-book-designer-screen]');
+		if (!shellDocument || !slot) {
+			// Chromium can first report iframe onLoad for its initial empty document.
+			// Wait for the srcdoc document rather than silently leaving the frame blank.
+			if (mockupMountAttempts.current < 8) {
+				mockupMountAttempts.current += 1;
+				mockupMountTimer.current = window.setTimeout(handleMockupLoad, 20);
+			}
+			return;
+		}
+		// Also constrain already-imported mockups created before the importer
+		// started adding its viewport rule.
+		shellDocument.documentElement.style.setProperty('overflow', 'hidden', 'important');
+		shellDocument.body.style.setProperty('overflow', 'hidden', 'important');
+		mockupMountAttempts.current = 0;
+		if (slot.querySelector('iframe[data-book-designer-preview]')) return;
+		const previewFrame = shellDocument.createElement('iframe');
+		previewFrame.dataset.bookDesignerPreview = '';
+		previewFrame.setAttribute('sandbox', 'allow-same-origin');
+		previewFrame.setAttribute('title', 'Book preview');
+		// This element belongs to the imported iframe's document, not Obsidian's
+		// document. Use browser-native styles rather than Obsidian's setCssProps
+		// helper, which is not present across iframe realms.
+		Object.assign(previewFrame.style, {
+			width: '100%',
+			height: '100%',
+			display: 'block',
+			border: '0',
+		});
+		const initializeWhenReady = () => {
+			if (frameRef.current !== previewFrame) return;
+			handleLoad();
+		};
+		previewFrame.addEventListener('load', initializeWhenReady, { once: true });
+		slot.replaceChildren(previewFrame);
+		frameRef.current = previewFrame;
+		// Start navigation only after the listener and reference are ready.
+		previewFrame.srcdoc = initialDocument;
+		// Nested sandboxed iframes occasionally omit the load event in Electron.
+		// The document check inside handleLoad makes these fallback attempts safe.
+		previewFrameReadyTimer.current = window.setTimeout(initializeWhenReady, 80);
+	};
+
+	return mockupHtml
+		? <iframe ref={shellRef} className="book-preview-frame book-preview-imported-mockup" sandbox="allow-same-origin" title="Imported mockup" srcDoc={mockupHtml} onLoad={handleMockupLoad} />
+		: <iframe ref={frameRef} className="book-preview-frame" sandbox="allow-same-origin" title="Book preview" srcDoc={initialDocument} onLoad={handleLoad} />;
 }
 
 function applyPreviewLayout(document: Document, mode: PreviewMode): void {

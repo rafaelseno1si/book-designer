@@ -5,6 +5,8 @@ export const PREVIEW_DEVICE_IDS = [
 	'ereader-large',
 	'tablet',
 	'custom',
+	'kindle-paperwhite',
+	'imported',
 ] as const;
 
 export type PreviewDeviceId = (typeof PREVIEW_DEVICE_IDS)[number];
@@ -26,6 +28,8 @@ export const PREVIEW_DEVICE_LABELS: Record<PreviewDeviceId, string> = {
 	'ereader-large': 'E-reader large',
 	tablet: 'Tablet',
 	custom: 'Custom size',
+	'kindle-paperwhite': 'Kindle Paperwhite',
+	imported: 'Imported mockup',
 };
 
 export const PREVIEW_DEVICE_DIMENSIONS: Record<PreviewDeviceId, { width: number; height: number }> = {
@@ -35,6 +39,8 @@ export const PREVIEW_DEVICE_DIMENSIONS: Record<PreviewDeviceId, { width: number;
 	'ereader-large': { width: 540, height: 760 },
 	tablet: { width: 680, height: 760 },
 	custom: { width: 390, height: 844 },
+	'kindle-paperwhite': { width: 461, height: 638 },
+	imported: { width: 460, height: 700 },
 };
 
 export function isPreviewDeviceId(value: string): value is PreviewDeviceId {

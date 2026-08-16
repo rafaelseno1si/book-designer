@@ -1,4 +1,6 @@
 import type { Book, BookMetadata } from '../core/model/book-model';
+import { isPreviewMockupId, type PreviewMockupId } from '../core/mockups/preview-mockup';
+import type { ImportedHtmlMockup } from '../core/mockups/html-mockup-import';
 import { renderBookPreviewDocument } from '../core/renderer/book-preview-renderer';
 import type { FolderSourceConfig } from '../core/sources/folder-source-adapter';
 import type { PreviewDeviceId } from './settings';
@@ -37,6 +39,9 @@ export interface BookProjectPreviewState {
 	autoDeviceScale: boolean;
 	customDeviceWidth: number;
 	customDeviceHeight: number;
+	mockupId: PreviewMockupId;
+	/** The selected item in the persisted imported-mockup library. */
+	importedMockupId: string | null;
 	mode: PreviewMode;
 	orientation: PreviewOrientation;
 	pageIndex: number;
@@ -59,6 +64,7 @@ export interface BookProjectRegistry {
 	version: 1;
 	projects: BookProject[];
 	activeProjectId: string | null;
+	mockups: ImportedHtmlMockup[];
 }
 export interface ProjectRuntime {
 	status: 'idle' | 'loading' | 'ready' | 'empty' | 'error';
@@ -87,13 +93,30 @@ export const DEFAULT_PROJECT_METADATA: BookProjectMetadata = { title: '', author
 export const DEFAULT_PROJECT_DESIGN: BookProjectDesign = { themeId: 'classic', typographyScale: 'comfortable', chapterStyleId: 'quiet', sceneBreakId: 'space' };
 const EMPTY_RUNTIME: ProjectRuntime = { status: 'idle', book: null, renderedHtml: '', error: null };
 
-export function emptyProjectRegistry(): BookProjectRegistry { return { version: 1, projects: [], activeProjectId: null }; }
+export function emptyProjectRegistry(): BookProjectRegistry { return { version: 1, projects: [], activeProjectId: null, mockups: [] }; }
 
 export function normalizeProjectRegistry(value: unknown, defaultDevice: PreviewDeviceId): BookProjectRegistry {
 	if (!isRecord(value) || !Array.isArray(value.projects)) return emptyProjectRegistry();
 	const projects = value.projects.flatMap((candidate) => normalizeProject(candidate, defaultDevice));
+	const mockups = normalizeImportedMockups(value.mockups);
+	// Phase 1 initially embedded a single imported mockup in each project. Pull
+	// those legacy entries into the shared library on the next save instead of
+	// losing users' existing device frames.
+	for (const candidate of value.projects) {
+		if (!isRecord(candidate) || !isRecord(candidate.preview)) continue;
+		const legacyMockup = normalizeImportedMockup(candidate.preview.importedMockup);
+		if (legacyMockup && !mockups.some((mockup) => mockup.id === legacyMockup.id)) mockups.push(legacyMockup);
+	}
+	for (const project of projects) {
+		const legacyPreview = value.projects.find((candidate) => isRecord(candidate) && candidate.id === project.id && isRecord(candidate.preview))?.preview;
+		const legacyId = isRecord(legacyPreview) ? normalizeImportedMockup(legacyPreview.importedMockup)?.id : null;
+		if (project.preview.deviceId === 'imported' && !project.preview.importedMockupId && legacyId) project.preview.importedMockupId = legacyId;
+		if (project.preview.deviceId === 'imported' && !mockups.some((mockup) => mockup.id === project.preview.importedMockupId)) {
+			project.preview = { ...project.preview, deviceId: defaultDevice === 'imported' ? 'ereader-6' : defaultDevice, importedMockupId: null };
+		}
+	}
 	const requestedId = typeof value.activeProjectId === 'string' ? value.activeProjectId : null;
-	return { version: 1, projects, activeProjectId: projects.some((project) => project.id === requestedId) ? requestedId : projects[0]?.id ?? null };
+	return { version: 1, projects, mockups, activeProjectId: projects.some((project) => project.id === requestedId) ? requestedId : projects[0]?.id ?? null };
 }
 
 export class BookProjectStore {
@@ -150,6 +173,28 @@ export class BookProjectStore {
 	}
 	updateDesign(design: Partial<BookProjectDesign>): void { this.updateActive((project) => ({ ...project, design: { ...project.design, ...design } }), true); }
 	updatePreview(preview: Partial<BookProjectPreviewState>): void { this.updateActive((project) => ({ ...project, preview: { ...project.preview, ...preview } }), preview.readerScale !== undefined); }
+	addImportedMockup(mockup: ImportedHtmlMockup): void {
+		this.registry = { ...this.registry, mockups: [...this.registry.mockups, cloneImportedMockup(mockup)] };
+		this.commit(true);
+	}
+	replaceImportedMockup(mockupId: string, replacement: ImportedHtmlMockup): void {
+		if (!this.registry.mockups.some((mockup) => mockup.id === mockupId)) return;
+		const updated = { ...cloneImportedMockup(replacement), id: mockupId };
+		this.registry = { ...this.registry, mockups: this.registry.mockups.map((mockup) => mockup.id === mockupId ? updated : mockup) };
+		this.commit(true);
+	}
+	deleteImportedMockup(mockupId: string): void {
+		if (!this.registry.mockups.some((mockup) => mockup.id === mockupId)) return;
+		const fallbackDevice = this.defaultDevice === 'imported' ? 'ereader-6' : this.defaultDevice;
+		this.registry = {
+			...this.registry,
+			mockups: this.registry.mockups.filter((mockup) => mockup.id !== mockupId),
+			projects: this.registry.projects.map((project) => project.preview.importedMockupId === mockupId
+				? { ...project, preview: { ...project.preview, deviceId: fallbackDevice, importedMockupId: null, mockupId: fallbackDevice === 'kindle-paperwhite' ? 'kindle-paperwhite' : 'plain', pageIndex: 0 } }
+				: project),
+		};
+		this.commit(true);
+	}
 	setRuntimeLoading(projectId: string): void {
 		if (this.registry.activeProjectId !== projectId) return;
 		// Keep the last successful preview visible while a background vault reload
@@ -228,16 +273,16 @@ function normalizeProject(value: unknown, defaultDevice: PreviewDeviceId): BookP
 		themeId: isThemeId(themeId) ? themeId : 'classic', typographyScale: isTypographyScale(typographyScale) ? typographyScale : 'comfortable', chapterStyleId: isChapterStyleId(chapterStyleId) ? chapterStyleId : 'quiet', sceneBreakId: isSceneBreakId(sceneBreakId) ? sceneBreakId : 'space',
 	}, preview: normalizePreviewState(preview, defaultDevice) }];
 }
-function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet', 'custom'].includes(value); }
+function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet', 'custom', 'kindle-paperwhite', 'imported'].includes(value); }
 function isPreviewMode(value: unknown): value is PreviewMode { return value === 'continuous' || value === 'paged'; }
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
-function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 130 ? value : 100; }
+function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 800 ? value : 100; }
 function validDeviceScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 25 && value <= 100 ? value : 100; }
 function validCustomDimension(value: unknown, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= 200 && value <= 2000 ? Math.round(value) : fallback; }
 function validScrollTop(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0; }
 function validPageIndex(value: unknown): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0; }
 function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
-	return { deviceId, readerScale: 100, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+	return { deviceId: deviceId === 'imported' ? 'ereader-6' : deviceId, readerScale: 100, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
 function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {
 	const deviceId = isPreviewDevice(value.deviceId) ? value.deviceId : defaultDevice;
@@ -248,6 +293,8 @@ function normalizePreviewState(value: Record<string, unknown>, defaultDevice: Pr
 		autoDeviceScale: typeof value.autoDeviceScale === 'boolean' ? value.autoDeviceScale : true,
 		customDeviceWidth: validCustomDimension(value.customDeviceWidth, 390),
 		customDeviceHeight: validCustomDimension(value.customDeviceHeight, 844),
+		mockupId: isPreviewMockupId(value.mockupId) ? value.mockupId : 'plain',
+		importedMockupId: typeof value.importedMockupId === 'string' ? value.importedMockupId : null,
 		mode: isPreviewMode(value.mode) ? value.mode : deviceId === 'ereader-6' ? 'paged' : 'continuous',
 		orientation: isPreviewOrientation(value.orientation) ? value.orientation : 'portrait',
 		pageIndex: validPageIndex(value.pageIndex),
@@ -256,8 +303,23 @@ function normalizePreviewState(value: Record<string, unknown>, defaultDevice: Pr
 	};
 }
 function stringOr(value: unknown, fallback: string): string { return typeof value === 'string' ? value : fallback; }
+function normalizeImportedMockup(value: unknown): ImportedHtmlMockup | null {
+	if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.html !== 'string' || value.html.length > 1_000_000) return null;
+	return { id: value.id, name: value.name, html: value.html, width: validCustomDimension(value.width, 460), height: validCustomDimension(value.height, 700) };
+}
+function normalizeImportedMockups(value: unknown): ImportedHtmlMockup[] {
+	if (!Array.isArray(value)) return [];
+	const seen = new Set<string>();
+	return value.flatMap((candidate) => {
+		const mockup = normalizeImportedMockup(candidate);
+		if (!mockup || seen.has(mockup.id)) return [];
+		seen.add(mockup.id);
+		return [mockup];
+	});
+}
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview } } : null; }
-function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject) }; }
+function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup { return { ...mockup }; }
+function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup) }; }
 function nextProjectName(folderName: string, projects: BookProject[]): string { const used = new Set(projects.map((project) => project.name)); if (!used.has(folderName)) return folderName; for (let suffix = 2; ; suffix += 1) { const candidate = `${folderName} ${suffix}`; if (!used.has(candidate)) return candidate; } }
 function defaultProjectId(): string { return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }

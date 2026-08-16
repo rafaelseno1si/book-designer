@@ -21,7 +21,7 @@ describe('BookProjectStore', () => {
 			activeProjectId: 'project-a',
 		}, 'phone');
 
-		expect(registry.projects[0]?.preview).toMatchObject({ mode: 'paged', orientation: 'portrait', pageIndex: 0, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844 });
+		expect(registry.projects[0]?.preview).toMatchObject({ mode: 'paged', orientation: 'portrait', pageIndex: 0, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain' });
 	});
 
 	it('persists only project configuration and preserves per-project settings when switching', async () => {
@@ -65,5 +65,31 @@ describe('BookProjectStore', () => {
 		store.setRuntimeLoading('project-a');
 
 		expect(store.getSnapshot().runtime).toMatchObject({ status: 'ready', renderedHtml });
+	});
+
+	it('keeps imported mockups in a shared library and clears deleted selections', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		store.addImportedMockup({ id: 'phone-frame', name: 'Phone frame', html: '<html><div data-book-designer-screen></div></html>', width: 390, height: 844 });
+		store.updatePreview({ deviceId: 'imported', importedMockupId: 'phone-frame' });
+		store.replaceImportedMockup('phone-frame', { id: 'different-id', name: 'Updated frame', html: '<html><div data-book-designer-screen></div></html>', width: 400, height: 800 });
+
+		expect(store.getSnapshot().registry.mockups).toEqual([expect.objectContaining({ id: 'phone-frame', name: 'Updated frame', width: 400 })]);
+
+		store.deleteImportedMockup('phone-frame');
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'phone', importedMockupId: null });
+		expect(store.getSnapshot().registry.mockups).toEqual([]);
+	});
+
+	it('migrates a legacy project-local imported mockup into the device library', () => {
+		const registry = normalizeProjectRegistry({
+			projects: [{
+				id: 'project-a', name: 'Novel', source: { type: 'folder', path: 'Books/Novel' }, metadata: {}, design: {},
+				preview: { deviceId: 'imported', importedMockup: { id: 'legacy-frame', name: 'Legacy frame', html: '<html><div data-book-designer-screen></div></html>', width: 390, height: 844 } },
+			}], activeProjectId: 'project-a',
+		}, 'phone');
+
+		expect(registry.mockups).toEqual([expect.objectContaining({ id: 'legacy-frame' })]);
+		expect(registry.projects[0]?.preview).toMatchObject({ deviceId: 'imported', importedMockupId: 'legacy-frame' });
 	});
 });
