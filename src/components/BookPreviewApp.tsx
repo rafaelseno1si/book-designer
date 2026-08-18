@@ -152,7 +152,6 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 					</div>}
 				</div>
 			</div>}
-			<button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button>
 		</header>
 		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} data-mockup={mockup.id} style={deviceStyle} aria-label="Book preview viewport">
 			<div className="book-preview-screen">
@@ -168,7 +167,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				<span className="book-preview-page-indicator" aria-live="polite">{Math.min(preview.pageIndex + 1, pageCount)} / {pageCount}</span>
 				<button type="button" className="book-preview-page-turn is-next" onClick={() => projectStore.updatePreview({ pageIndex: Math.min(pageCount - 1, preview.pageIndex + 1) })} disabled={preview.pageIndex >= pageCount - 1} aria-label="Next page">›</button>
 			</>}
-		</section></div></main>
+		</section></div><button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button></main>
 		{mockupDialog && <MockupImportDialog dialog={mockupDialog} fileInputRef={mockupDialogFileRef} onClose={() => setMockupDialog(null)} onCopyInstructions={() => { void copyMockupInstructions(); }} onNameChange={(name) => setMockupDialog({ ...mockupDialog, name, error: null })} onChooseFile={() => mockupDialogFileRef.current?.click()} onFile={(file) => { if (file) void importMockupFile(file); }} />}
 	</section>;
 }

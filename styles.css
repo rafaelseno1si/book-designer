@@ -336,18 +336,18 @@
 }
 
 .book-preview-toolbar-toggle {
-	margin-left: auto;
-	/* Controls include a label above the input; align the chevron with the
-	 * actual input row rather than vertically centering it against both rows. */
-	align-self: flex-end;
-}
-
-.book-preview-toolbar.is-collapsed .book-preview-toolbar-toggle {
-	margin-left: 0;
+	position: absolute;
+	z-index: 4;
+	top: 10px;
+	right: 10px;
+	opacity: 0.22;
+	transition: opacity 140ms ease, background-color 140ms ease;
 }
 
 .book-preview-settings-button:hover,
-.book-preview-toolbar-toggle:hover {
+.book-preview-toolbar-toggle:hover,
+.book-preview-toolbar-toggle:focus-visible {
+	opacity: 0.9;
 	background: var(--background-modifier-hover);
 }
 
@@ -568,6 +568,7 @@
 .book-preview-canvas {
 	display: grid;
 	place-items: center;
+	position: relative;
 	min-height: 0;
 	overflow: auto;
 	padding: 22px;
