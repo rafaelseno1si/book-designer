@@ -37,11 +37,15 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		: selectedImportedMockup
 			? { width: selectedImportedMockup.width, height: selectedImportedMockup.height }
 		: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
-	const nativeDeviceSize = preview?.deviceId !== 'custom' && preview?.orientation === 'landscape'
-		? { width: deviceDimensions.height, height: deviceDimensions.width }
-		: deviceDimensions;
+	const isLandscape = preview?.orientation === 'landscape';
+	// The device keeps its authored/native geometry. In landscape we rotate that
+	// complete frame, while the stage reserves the swapped visual footprint.
+	const nativeDeviceSize = deviceDimensions;
+	const displayedDeviceSize = isLandscape
+		? { width: nativeDeviceSize.height, height: nativeDeviceSize.width }
+		: nativeDeviceSize;
 	const autoDeviceScale = preview?.autoDeviceScale && canvasSize.width > 0 && canvasSize.height > 0
-		? Math.min(100, (canvasSize.width / nativeDeviceSize.width) * 100, (canvasSize.height / nativeDeviceSize.height) * 100)
+		? Math.min(100, (canvasSize.width / displayedDeviceSize.width) * 100, (canvasSize.height / displayedDeviceSize.height) * 100)
 		: null;
 	const effectiveDeviceScale = autoDeviceScale ?? preview?.deviceScale ?? 100;
 	const deviceStyle = {
@@ -53,11 +57,11 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		'--book-preview-screen-radius': `${mockup.screen.borderRadius}%`,
 		width: `${nativeDeviceSize.width}px`,
 		height: `${nativeDeviceSize.height}px`,
-		transform: `translate(-50%, -50%) scale(${effectiveDeviceScale / 100})`,
+		transform: `translate(-50%, -50%)${isLandscape ? ' rotate(90deg)' : ''} scale(${effectiveDeviceScale / 100})`,
 	} as CSSProperties;
 	const deviceStageStyle = {
-		width: `${nativeDeviceSize.width * (effectiveDeviceScale / 100)}px`,
-		height: `${nativeDeviceSize.height * (effectiveDeviceScale / 100)}px`,
+		width: `${displayedDeviceSize.width * (effectiveDeviceScale / 100)}px`,
+		height: `${displayedDeviceSize.height * (effectiveDeviceScale / 100)}px`,
 	} as CSSProperties;
 
 	useEffect(() => { latestScrollTop.current = preview?.scrollTop ?? 0; }, [project?.id]);
@@ -137,7 +141,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 					{snapshot.registry.mockups.length > 0 && <optgroup label="Imported mockups">{snapshot.registry.mockups.map((candidate) => <option key={candidate.id} value={`imported:${candidate.id}`}>{candidate.name}</option>)}</optgroup>}
 				</select></label>
 				<label className="book-preview-mode-control"><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Scroll</option><option value="paged">Paged</option></select></label>
-				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview(preview.deviceId === 'custom' ? { orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', customDeviceWidth: preview.customDeviceHeight, customDeviceHeight: preview.customDeviceWidth, pageIndex: 0 } : { orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
+				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview({ orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
 				<div className="book-preview-settings">
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => !open)} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
@@ -159,15 +163,16 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} orientation={preview!.orientation} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
+		</section>
 			{preview?.mode === 'paged' && <>
 				<button type="button" className="book-preview-page-turn is-previous" onClick={() => projectStore.updatePreview({ pageIndex: Math.max(0, preview.pageIndex - 1) })} disabled={preview.pageIndex === 0} aria-label="Previous page">‹</button>
 				<span className="book-preview-page-indicator" aria-live="polite">{Math.min(preview.pageIndex + 1, pageCount)} / {pageCount}</span>
 				<button type="button" className="book-preview-page-turn is-next" onClick={() => projectStore.updatePreview({ pageIndex: Math.min(pageCount - 1, preview.pageIndex + 1) })} disabled={preview.pageIndex >= pageCount - 1} aria-label="Next page">›</button>
 			</>}
-		</section></div><button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button></main>
+		</div><button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button></main>
 		{mockupDialog && <MockupImportDialog dialog={mockupDialog} fileInputRef={mockupDialogFileRef} onClose={() => setMockupDialog(null)} onCopyInstructions={() => { void copyMockupInstructions(); }} onNameChange={(name) => setMockupDialog({ ...mockupDialog, name, error: null })} onChooseFile={() => mockupDialogFileRef.current?.click()} onFile={(file) => { if (file) void importMockupFile(file); }} />}
 	</section>;
 }
@@ -199,6 +204,7 @@ function MockupImportDialog({ dialog, fileInputRef, onClose, onCopyInstructions,
 function BookPreviewFrame({
 	html,
 	mockupHtml,
+	orientation,
 	mode,
 	pageIndex,
 	latestScrollTop,
@@ -208,6 +214,7 @@ function BookPreviewFrame({
 }: {
 	html: string;
 	mockupHtml: string | null;
+	orientation: 'portrait' | 'landscape';
 	mode: PreviewMode;
 	pageIndex: number;
 	latestScrollTop: RefObject<number>;
@@ -262,6 +269,13 @@ function BookPreviewFrame({
 		applyLayout();
 	}, [html]);
 	useEffect(() => { if (loaded.current) applyLayout(); }, [mode, pageIndex]);
+	useEffect(() => {
+		if (!loaded.current || !frameRef.current) return;
+		configureBookFrameOrientation(frameRef.current, orientation);
+		materializedMode.current = null;
+		pagedViewportHeight.current = 0;
+		applyLayout();
+	}, [orientation]);
 
 	const applyLayout = (measureAfterPaint = false) => {
 		const frame = frameRef.current;
@@ -320,6 +334,7 @@ function BookPreviewFrame({
 		// srcdoc has been parsed. Do not initialize that empty document.
 		if (!frame.contentDocument?.querySelector('.book')) return;
 		initializedFrame.current = frame;
+		configureBookFrameOrientation(frame, orientation);
 		frameCleanup.current?.();
 		loaded.current = true;
 		renderedHtml.current = html;
@@ -402,6 +417,7 @@ function BookPreviewFrame({
 		previewFrame.addEventListener('load', initializeWhenReady, { once: true });
 		slot.replaceChildren(previewFrame);
 		frameRef.current = previewFrame;
+		configureBookFrameOrientation(previewFrame, orientation);
 		// Start navigation only after the listener and reference are ready.
 		previewFrame.srcdoc = initialDocument;
 		// Nested sandboxed iframes occasionally omit the load event in Electron.
@@ -412,6 +428,35 @@ function BookPreviewFrame({
 	return mockupHtml
 		? <iframe ref={shellRef} className="book-preview-frame book-preview-imported-mockup" sandbox="allow-same-origin" title="Imported mockup" srcDoc={mockupHtml} onLoad={handleMockupLoad} />
 		: <iframe ref={frameRef} className="book-preview-frame" sandbox="allow-same-origin" title="Book preview" srcDoc={initialDocument} onLoad={handleLoad} />;
+}
+
+function configureBookFrameOrientation(frame: HTMLIFrameElement, orientation: 'portrait' | 'landscape'): void {
+	const container = frame.parentElement;
+	if (!container) return;
+	if (orientation === 'portrait') {
+		Object.assign(frame.style, {
+			position: 'static',
+			left: '',
+			top: '',
+			width: '100%',
+			height: '100%',
+			transform: '',
+			transformOrigin: '',
+		});
+		return;
+	}
+	// The frame and its mockup rotate as one physical device. Counter-rotating
+	// only the book viewport keeps its text upright and gives it a true
+	// landscape layout viewport, including inside arbitrary imported mockups.
+	Object.assign(frame.style, {
+		position: 'absolute',
+		left: '50%',
+		top: '50%',
+		width: `${container.clientHeight}px`,
+		height: `${container.clientWidth}px`,
+		transform: 'translate(-50%, -50%) rotate(-90deg)',
+		transformOrigin: 'center',
+	});
 }
 
 function applyPreviewLayout(document: Document, mode: PreviewMode): void {

@@ -793,7 +793,7 @@
 	background: linear-gradient(270deg, rgb(0 0 0 / 0.12), transparent);
 }
 
-.book-preview-device:hover .book-preview-page-turn:not(:disabled),
+.book-preview-device-stage:hover .book-preview-page-turn:not(:disabled),
 .book-preview-page-turn:focus-visible {
 	color: var(--text-on-accent);
 	opacity: 1;
@@ -823,7 +823,7 @@
 	pointer-events: none;
 }
 
-.book-preview-device:hover .book-preview-page-indicator {
+.book-preview-device-stage:hover .book-preview-page-indicator {
 	opacity: 1;
 }
 
