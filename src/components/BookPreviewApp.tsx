@@ -388,11 +388,24 @@ function BookPreviewFrame({
 				onLocationChange(scrollTop, activeSectionId);
 			}, 200);
 		};
+		const preventPagedPointerScroll = (event: WheelEvent | TouchEvent) => {
+			if (modeRef.current === 'paged') event.preventDefault();
+		};
+		const preventPagedKeyboardScroll = (event: KeyboardEvent) => {
+			if (modeRef.current !== 'paged') return;
+			if ([' ', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) event.preventDefault();
+		};
 		frameWindow.addEventListener('scroll', handleScroll);
 		frameWindow.addEventListener('resize', invalidateForResize);
+		frameWindow.addEventListener('wheel', preventPagedPointerScroll, { passive: false });
+		frameWindow.addEventListener('touchmove', preventPagedPointerScroll, { passive: false });
+		frameWindow.addEventListener('keydown', preventPagedKeyboardScroll);
 		frameCleanup.current = () => {
 			frameWindow.removeEventListener('scroll', handleScroll);
 			frameWindow.removeEventListener('resize', invalidateForResize);
+			frameWindow.removeEventListener('wheel', preventPagedPointerScroll);
+			frameWindow.removeEventListener('touchmove', preventPagedPointerScroll);
+			frameWindow.removeEventListener('keydown', preventPagedKeyboardScroll);
 		};
 	};
 
@@ -491,8 +504,8 @@ function applyPreviewLayout(
 	const sideInset = (100 - contentWidth) / 2;
 	const blockInset = (100 - contentHeight) / 2;
 	style.textContent = mode === 'paged'
-		? `html{width:100%;height:100%;margin:0!important;padding:0!important;min-width:0;overflow-x:hidden!important;overflow-y:scroll!important;scroll-behavior:auto;scroll-snap-type:y mandatory;scrollbar-width:none}html::-webkit-scrollbar{display:none}body{width:100%;min-height:100%;margin:0!important;padding:0!important;overflow:hidden!important}.book{width:100%;min-width:0;max-width:none;margin:0!important;padding:0!important;overflow:hidden!important;overflow-wrap:anywhere}.book-page-slot,.book-page{box-sizing:border-box;display:flow-root;width:100%;height:100vh;min-height:100vh;max-height:100vh;margin:0!important;overflow:clip!important;scroll-snap-align:start;scroll-snap-stop:always}.book-page-slot>.book-page{scroll-snap-align:none;scroll-snap-stop:normal}.book-page{padding:${blockInset}vh ${sideInset}%;contain:layout paint}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}`
-		: `html,body{overflow:auto}.book{transform:none!important;padding:${blockInset}vh ${sideInset}%}`;
+		? `html{width:100%;height:100%;margin:0!important;padding:0!important;min-width:0;overflow:hidden!important;scroll-behavior:auto;scroll-snap-type:y mandatory;scrollbar-width:none}html::-webkit-scrollbar{display:none}body{width:100%;min-height:100%;margin:0!important;padding:0!important;overflow:hidden!important}.book{width:100%;min-width:0;max-width:none;margin:0!important;padding:0!important;overflow:hidden!important;overflow-wrap:anywhere}.book-page-slot,.book-page{box-sizing:border-box;display:flow-root;width:100%;height:100vh;min-height:100vh;max-height:100vh;margin:0!important;overflow:clip!important;scroll-snap-align:start;scroll-snap-stop:always}.book-page-slot>.book-page{scroll-snap-align:none;scroll-snap-stop:normal}.book-page{padding:${blockInset}vh ${sideInset}%;contain:layout paint}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}`
+		: `html,body{overflow:auto;scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar{display:none}.book{transform:none!important;padding:${blockInset}vh ${sideInset}%}`;
 	syncMarginGuide(document, marginGuide, sideInset, blockInset);
 }
 
