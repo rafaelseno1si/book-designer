@@ -22,6 +22,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const [pageCount, setPageCount] = useState(1);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
+	const [marginGuide, setMarginGuide] = useState<'side' | 'vertical' | null>(null);
 	const [mockupDialog, setMockupDialog] = useState<{ editingId: string | null; name: string; error: string | null } | null>(null);
 	const preview = project?.preview;
 	const mockup = previewMockup(preview?.deviceId === 'kindle-paperwhite' ? 'kindle-paperwhite' : preview?.mockupId ?? 'plain');
@@ -143,9 +144,11 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				<label className="book-preview-mode-control"><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Scroll</option><option value="paged">Paged</option></select></label>
 				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview({ orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
 				<div className="book-preview-settings">
-					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => !open)} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
+					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => { if (open) setMarginGuide(null); return !open; })} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
 						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="800" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
+						<label className="book-preview-settings-range"><span>Side margins</span><input type="range" min="0" max="100" step="1" value={preview.contentWidth} onPointerDown={() => setMarginGuide('side')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('side')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentWidth: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentWidth}% content width`} /><output>{preview.contentWidth}%</output></label>
+						<label className="book-preview-settings-range"><span>Top &amp; bottom margins</span><input type="range" min="0" max="100" step="1" value={preview.contentHeight} onPointerDown={() => setMarginGuide('vertical')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('vertical')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentHeight: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentHeight}% content height`} /><output>{preview.contentHeight}%</output></label>
 						<label className="book-preview-settings-range"><span>Device scale</span><input type="range" min="25" max="100" step="5" value={preview.deviceScale} onChange={(event) => projectStore.updatePreview({ deviceScale: Number(event.currentTarget.value), autoDeviceScale: false })} disabled={preview.autoDeviceScale} aria-valuetext={`${Math.round(effectiveDeviceScale)}%`} /><output>{Math.round(effectiveDeviceScale)}%</output></label>
 						<label className="book-preview-settings-checkbox"><input type="checkbox" checked={preview.autoDeviceScale} onChange={(event) => projectStore.updatePreview({ autoDeviceScale: event.currentTarget.checked })} /><span>Auto</span></label>
 						{selectedImportedMockup && <div className="book-preview-mockup-actions">
@@ -163,7 +166,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} orientation={preview!.orientation} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} orientation={preview!.orientation} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
@@ -205,6 +208,9 @@ function BookPreviewFrame({
 	html,
 	mockupHtml,
 	orientation,
+	contentWidth,
+	contentHeight,
+	marginGuide,
 	mode,
 	pageIndex,
 	latestScrollTop,
@@ -215,6 +221,9 @@ function BookPreviewFrame({
 	html: string;
 	mockupHtml: string | null;
 	orientation: 'portrait' | 'landscape';
+	contentWidth: number;
+	contentHeight: number;
+	marginGuide: 'side' | 'vertical' | null;
 	mode: PreviewMode;
 	pageIndex: number;
 	latestScrollTop: RefObject<number>;
@@ -268,7 +277,15 @@ function BookPreviewFrame({
 		renderedHtml.current = html;
 		applyLayout();
 	}, [html]);
-	useEffect(() => { if (loaded.current) applyLayout(); }, [mode, pageIndex]);
+	useEffect(() => { if (loaded.current) applyLayout(); }, [mode, pageIndex, marginGuide]);
+	useEffect(() => {
+		if (!loaded.current) return;
+		if (modeRef.current === 'paged') {
+			materializedMode.current = null;
+			pagedPagesCreated.current = false;
+		}
+		applyLayout();
+	}, [contentWidth, contentHeight]);
 	useEffect(() => {
 		if (!loaded.current || !frameRef.current) return;
 		configureBookFrameOrientation(frameRef.current, orientation);
@@ -295,7 +312,7 @@ function BookPreviewFrame({
 			pagedPagesCreated.current = false;
 			if (activeMode === 'paged') pagedViewportHeight.current = frame.clientHeight;
 		}
-		applyPreviewLayout(document, activeMode);
+		applyPreviewLayout(document, activeMode, contentWidth, contentHeight, marginGuide);
 		if (activeMode === 'continuous') {
 			if (!virtualizer.current) virtualizer.current = ContinuousBookVirtualizer.create(document, Math.max(360, frame.clientHeight));
 			virtualizer.current?.update(latestScrollTop.current, frame.clientHeight);
@@ -459,15 +476,46 @@ function configureBookFrameOrientation(frame: HTMLIFrameElement, orientation: 'p
 	});
 }
 
-function applyPreviewLayout(document: Document, mode: PreviewMode): void {
+function applyPreviewLayout(
+	document: Document,
+	mode: PreviewMode,
+	contentWidth: number,
+	contentHeight: number,
+	marginGuide: 'side' | 'vertical' | null,
+): void {
 	const style = document.getElementById('book-designer-preview-layout');
 	// The style element belongs to the preview iframe's Window. A host-window
 	// instanceof HTMLStyleElement check is false across that realm, which used
 	// to skip the entire paged stylesheet and leave the document scrollable.
 	if (!style || style.tagName !== 'STYLE') return;
+	const sideInset = (100 - contentWidth) / 2;
+	const blockInset = (100 - contentHeight) / 2;
 	style.textContent = mode === 'paged'
-		? 'html{width:100%;height:100%;margin:0!important;padding:0!important;min-width:0;overflow-x:hidden!important;overflow-y:scroll!important;scroll-behavior:auto;scroll-snap-type:y mandatory;scrollbar-width:none}html::-webkit-scrollbar{display:none}body{width:100%;min-height:100%;margin:0!important;padding:0!important;overflow:hidden!important}.book{width:100%;min-width:0;max-width:none;margin:0!important;padding:0!important;overflow:hidden!important;overflow-wrap:anywhere}.book-page-slot,.book-page{box-sizing:border-box;display:flow-root;width:100%;height:100vh;min-height:100vh;max-height:100vh;margin:0!important;overflow:clip!important;scroll-snap-align:start;scroll-snap-stop:always}.book-page-slot>.book-page{scroll-snap-align:none;scroll-snap-stop:normal}.book-page{padding:3.5rem 2.25rem;contain:layout paint}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}'
-		: 'html,body{overflow:auto}.book{transform:none!important}';
+		? `html{width:100%;height:100%;margin:0!important;padding:0!important;min-width:0;overflow-x:hidden!important;overflow-y:scroll!important;scroll-behavior:auto;scroll-snap-type:y mandatory;scrollbar-width:none}html::-webkit-scrollbar{display:none}body{width:100%;min-height:100%;margin:0!important;padding:0!important;overflow:hidden!important}.book{width:100%;min-width:0;max-width:none;margin:0!important;padding:0!important;overflow:hidden!important;overflow-wrap:anywhere}.book-page-slot,.book-page{box-sizing:border-box;display:flow-root;width:100%;height:100vh;min-height:100vh;max-height:100vh;margin:0!important;overflow:clip!important;scroll-snap-align:start;scroll-snap-stop:always}.book-page-slot>.book-page{scroll-snap-align:none;scroll-snap-stop:normal}.book-page{padding:${blockInset}vh ${sideInset}%;contain:layout paint}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}`
+		: `html,body{overflow:auto}.book{transform:none!important;padding:${blockInset}vh ${sideInset}%}`;
+	syncMarginGuide(document, marginGuide, sideInset, blockInset);
+}
+
+function syncMarginGuide(document: Document, type: 'side' | 'vertical' | null, sideInset: number, blockInset: number): void {
+	const existing = document.getElementById('book-designer-margin-guide');
+	if (!type) {
+		existing?.remove();
+		return;
+	}
+	const guide = existing ?? document.createElement('div');
+	guide.id = 'book-designer-margin-guide';
+	Object.assign(guide.style, { position: 'fixed', inset: '0', zIndex: '2147483647', pointerEvents: 'none' });
+	guide.replaceChildren();
+	for (const position of type === 'side' ? [`left:${sideInset}%`, `right:${sideInset}%`] : [`top:${blockInset}%`, `bottom:${blockInset}%`]) {
+		const line = document.createElement('i');
+		Object.assign(line.style, type === 'side'
+			? { position: 'absolute', top: '0', bottom: '0', borderLeft: '1px dashed rgb(105 173 255 / 0.9)' }
+			: { position: 'absolute', left: '0', right: '0', borderTop: '1px dashed rgb(105 173 255 / 0.9)' });
+		const [property, value] = position.split(':');
+		line.style.setProperty(property ?? '', value ?? '');
+		guide.append(line);
+	}
+	if (!existing) document.body.append(guide);
 }
 
 function createPagedPages(document: Document): void {
@@ -517,7 +565,18 @@ function createPagedPages(document: Document): void {
 }
 
 function pageFits(page: HTMLElement): boolean {
-	return page.scrollHeight <= page.clientHeight + 1;
+	const document = page.ownerDocument;
+	const pageStyle = document.defaultView?.getComputedStyle(page);
+	const paddingBottom = Number.parseFloat(pageStyle?.paddingBottom ?? '0');
+	const contentBottom = page.getBoundingClientRect().bottom - paddingBottom;
+	let furthestBottom = page.getBoundingClientRect().top;
+	for (const element of Array.from(page.querySelectorAll<HTMLElement>('*'))) {
+		const rect = element.getBoundingClientRect();
+		if (rect.width === 0 && rect.height === 0) continue;
+		const marginBottom = Number.parseFloat(document.defaultView?.getComputedStyle(element).marginBottom ?? '0');
+		furthestBottom = Math.max(furthestBottom, rect.bottom + marginBottom);
+	}
+	return furthestBottom <= contentBottom + 1;
 }
 
 /**

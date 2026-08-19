@@ -35,6 +35,8 @@ export interface BookProjectDesign {
 export interface BookProjectPreviewState {
 	deviceId: PreviewDeviceId;
 	readerScale: number;
+	contentWidth: number;
+	contentHeight: number;
 	deviceScale: number;
 	autoDeviceScale: boolean;
 	customDeviceWidth: number;
@@ -277,18 +279,21 @@ function isPreviewDevice(value: unknown): value is PreviewDeviceId { return type
 function isPreviewMode(value: unknown): value is PreviewMode { return value === 'continuous' || value === 'paged'; }
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 800 ? value : 100; }
+function validContentSpan(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : 100; }
 function validDeviceScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 25 && value <= 100 ? value : 100; }
 function validCustomDimension(value: unknown, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= 200 && value <= 2000 ? Math.round(value) : fallback; }
 function validScrollTop(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0; }
 function validPageIndex(value: unknown): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0; }
 function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
-	return { deviceId: deviceId === 'imported' ? 'ereader-6' : deviceId, readerScale: 100, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+	return { deviceId: deviceId === 'imported' ? 'ereader-6' : deviceId, readerScale: 100, contentWidth: 100, contentHeight: 100, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
 function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {
 	const deviceId = isPreviewDevice(value.deviceId) ? value.deviceId : defaultDevice;
 	return {
 		deviceId,
 		readerScale: validScale(value.readerScale),
+		contentWidth: validContentSpan(value.contentWidth),
+		contentHeight: validContentSpan(value.contentHeight),
 		deviceScale: validDeviceScale(value.deviceScale),
 		autoDeviceScale: typeof value.autoDeviceScale === 'boolean' ? value.autoDeviceScale : true,
 		customDeviceWidth: validCustomDimension(value.customDeviceWidth, 390),
