@@ -384,6 +384,22 @@
 	accent-color: var(--interactive-accent);
 }
 
+.book-preview-frame-color input[type='color'] {
+	width: 32px;
+	height: 28px;
+	border: 0;
+	border-radius: 4px;
+	padding: 0;
+	background: transparent;
+	cursor: pointer;
+}
+
+.book-preview-frame-color output {
+	justify-self: end;
+	font-family: var(--font-monospace);
+	font-size: 0.7rem;
+}
+
 .book-preview-settings-popover output {
 	color: var(--text-normal);
 	font-size: 0.8rem;
@@ -622,7 +638,7 @@
 	min-height: 0;
 	padding: 18px;
 	border: 1px solid var(--background-modifier-border);
-	background: var(--background-primary);
+	background: var(--book-preview-frame-color, var(--background-primary));
 	transform-origin: center;
 	will-change: transform;
 }
@@ -642,7 +658,9 @@
 	padding: 0;
 	border: 1px solid #090909;
 	border-radius: 3.15%;
-	background: linear-gradient(180deg, #252525 0%, #171717 40%, #101010 100%);
+	/* Preserve the original Kindle frame's tonal ramp (#252525 → #171717 →
+	 * #101010) while retaining the hue/chroma of the user-selected top color. */
+	background: linear-gradient(180deg, var(--book-preview-frame-color, #252525) 0%, color-mix(in oklch, var(--book-preview-frame-color, #252525) 62%, black) 40%, color-mix(in oklch, var(--book-preview-frame-color, #252525) 43%, black) 100%);
 	box-shadow: 0 1px 1px rgb(255 255 255 / 0.06) inset, 0 -2px 3px rgb(0 0 0 / 0.7) inset, 0 9px 23px rgb(0 0 0 / 0.38), 0 2px 4px rgb(0 0 0 / 0.45);
 }
 
@@ -751,7 +769,7 @@
 	width: 100%;
 	height: 100%;
 	min-height: 0;
-	border: 1px solid var(--book-preview-paper-edge);
+	border: 0;
 	background: var(--book-preview-paper);
 	box-shadow: 0 14px 30px rgb(0 0 0 / 0.12);
 }

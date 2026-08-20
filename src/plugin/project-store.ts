@@ -37,6 +37,7 @@ export interface BookProjectPreviewState {
 	readerScale: number;
 	contentWidth: number;
 	contentHeight: number;
+	frameColor: string;
 	deviceContentSettings: Record<string, PreviewContentSettings>;
 	deviceScale: number;
 	autoDeviceScale: boolean;
@@ -55,6 +56,7 @@ export interface PreviewContentSettings {
 	readerScale: number;
 	contentWidth: number;
 	contentHeight: number;
+	frameColor: string;
 }
 export const PREVIEW_MODES = ['continuous', 'paged'] as const;
 export type PreviewMode = (typeof PREVIEW_MODES)[number];
@@ -187,7 +189,7 @@ export class BookProjectStore {
 			const settings = { ...previous.deviceContentSettings };
 			settings[previewContentKey(previous)] = contentSettingsFromPreview(previous);
 			const targetKey = previewContentKey(next);
-			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined;
+			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined || preview.frameColor !== undefined;
 			const target = hasContentChange
 				? normalizeContentSettings({ ...contentSettingsFromPreview(next), ...preview })
 				: settings[targetKey] ?? DEFAULT_PREVIEW_CONTENT_SETTINGS;
@@ -300,13 +302,14 @@ function isPreviewMode(value: unknown): value is PreviewMode { return value === 
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 800 ? value : 100; }
 function validContentSpan(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : 100; }
-const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = { readerScale: 100, contentWidth: 100, contentHeight: 100 };
-function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, 'readerScale' | 'contentWidth' | 'contentHeight'>): PreviewContentSettings {
-	return { readerScale: preview.readerScale, contentWidth: preview.contentWidth, contentHeight: preview.contentHeight };
+const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = { readerScale: 100, contentWidth: 100, contentHeight: 100, frameColor: '#2a2a2a' };
+function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, 'readerScale' | 'contentWidth' | 'contentHeight' | 'frameColor'>): PreviewContentSettings {
+	return { readerScale: preview.readerScale, contentWidth: preview.contentWidth, contentHeight: preview.contentHeight, frameColor: preview.frameColor };
 }
 function normalizeContentSettings(value: Record<string, unknown> | PreviewContentSettings): PreviewContentSettings {
-	return { readerScale: validScale(value.readerScale), contentWidth: validContentSpan(value.contentWidth), contentHeight: validContentSpan(value.contentHeight) };
+	return { readerScale: validScale(value.readerScale), contentWidth: validContentSpan(value.contentWidth), contentHeight: validContentSpan(value.contentHeight), frameColor: validFrameColor(value.frameColor) };
 }
+function validFrameColor(value: unknown): string { return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_PREVIEW_CONTENT_SETTINGS.frameColor; }
 function previewContentKey(preview: Pick<BookProjectPreviewState, 'deviceId' | 'importedMockupId'>): string {
 	return preview.deviceId === 'imported' && preview.importedMockupId ? `imported:${preview.importedMockupId}` : `device:${preview.deviceId}`;
 }

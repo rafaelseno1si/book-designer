@@ -29,6 +29,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const canvasRef = useRef<HTMLElement>(null);
 	const deviceRef = useRef<HTMLElement>(null);
 	const mockupDialogFileRef = useRef<HTMLInputElement>(null);
+	const settingsRef = useRef<HTMLDivElement>(null);
 	const selectedImportedMockup = preview?.deviceId === 'imported'
 		? snapshot.registry.mockups.find((candidate) => candidate.id === preview.importedMockupId) ?? null
 		: null;
@@ -51,6 +52,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const effectiveDeviceScale = autoDeviceScale ?? preview?.deviceScale ?? 100;
 	const deviceStyle = {
 		'--book-preview-reader-scale': `${preview?.readerScale ?? 100}%`,
+		'--book-preview-frame-color': preview?.frameColor ?? '#2a2a2a',
 		'--book-preview-screen-top': `${mockup.screen.top}%`,
 		'--book-preview-screen-left': `${mockup.screen.left}%`,
 		'--book-preview-screen-width': `${mockup.screen.width}%`,
@@ -66,6 +68,17 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	} as CSSProperties;
 
 	useEffect(() => { latestScrollTop.current = preview?.scrollTop ?? 0; }, [project?.id]);
+	useEffect(() => {
+		if (!settingsOpen) return;
+		const closeWhenOutside = (event: PointerEvent) => {
+			if (event.target instanceof Node && !settingsRef.current?.contains(event.target)) {
+				setSettingsOpen(false);
+				setMarginGuide(null);
+			}
+		};
+		document.addEventListener('pointerdown', closeWhenOutside);
+		return () => document.removeEventListener('pointerdown', closeWhenOutside);
+	}, [settingsOpen]);
 	useEffect(() => { setPageCount(1); }, [project?.id, preview?.mode, preview?.orientation]);
 	useEffect(() => {
 		const canvas = canvasRef.current;
@@ -143,12 +156,13 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				</select></label>
 				<label className="book-preview-mode-control"><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Scroll</option><option value="paged">Paged</option></select></label>
 				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview({ orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
-				<div className="book-preview-settings">
+				<div ref={settingsRef} className="book-preview-settings">
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => { if (open) setMarginGuide(null); return !open; })} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
 						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="800" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
 						<label className="book-preview-settings-range"><span>Side margins</span><input type="range" min="0" max="100" step="1" value={preview.contentWidth} onPointerDown={() => setMarginGuide('side')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('side')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentWidth: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentWidth}% content width`} /><output>{preview.contentWidth}%</output></label>
 						<label className="book-preview-settings-range"><span>Top &amp; bottom margins</span><input type="range" min="0" max="100" step="1" value={preview.contentHeight} onPointerDown={() => setMarginGuide('vertical')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('vertical')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentHeight: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentHeight}% content height`} /><output>{preview.contentHeight}%</output></label>
+						<label className="book-preview-settings-range book-preview-frame-color"><span>Frame color</span><input type="color" value={preview.frameColor} onChange={(event) => projectStore.updatePreview({ frameColor: event.currentTarget.value })} aria-label="Frame color" /><output>{preview.frameColor}</output></label>
 						<label className="book-preview-settings-range"><span>Device scale</span><input type="range" min="25" max="100" step="5" value={preview.deviceScale} onChange={(event) => projectStore.updatePreview({ deviceScale: Number(event.currentTarget.value), autoDeviceScale: false })} disabled={preview.autoDeviceScale} aria-valuetext={`${Math.round(effectiveDeviceScale)}%`} /><output>{Math.round(effectiveDeviceScale)}%</output></label>
 						<label className="book-preview-settings-checkbox"><input type="checkbox" checked={preview.autoDeviceScale} onChange={(event) => projectStore.updatePreview({ autoDeviceScale: event.currentTarget.checked })} /><span>Auto</span></label>
 						{selectedImportedMockup && <div className="book-preview-mockup-actions">
@@ -166,7 +180,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} orientation={preview!.orientation} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
@@ -180,7 +194,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	</section>;
 }
 
-const MOCKUP_IMPORT_INSTRUCTIONS = `Book Designer HTML/CSS mockup guide\n\n1. Declare the mockup's fixed native dimensions on <html>:\n   <html data-book-designer-width="390" data-book-designer-height="844">\n\n2. Include exactly one empty screen slot where the book belongs:\n   <div data-book-designer-screen></div>\n\n3. Position and size that slot with your CSS. Keep the mockup body at its fixed native dimensions; Book Designer scales the complete mockup without reflowing it.\n\nFor safety, scripts, event attributes, external URLs, CSS imports, and nested frames are removed during import.`;
+const MOCKUP_IMPORT_INSTRUCTIONS = `Book Designer HTML/CSS mockup guide\n\n1. Declare the mockup's fixed native dimensions on <html>:\n   <html data-book-designer-width="390" data-book-designer-height="844">\n\n2. Include exactly one empty screen slot where the book belongs:\n   <div data-book-designer-screen></div>\n\n3. Position and size that slot with your CSS. Keep the mockup body at its fixed native dimensions; Book Designer scales the complete mockup without reflowing it.\n\n4. Include shadow space within the declared width and height. Imported mockup viewports are clipped, so a shadow that extends outside <html> or <body> will be cut off. Give the device an internal transparent margin around it instead.\n\n5. The optional --book-designer-frame-color CSS variable receives the user's saved frame color. Use it in your frame gradient or background when you want the color picker to tint the mockup, for example:\n   background: linear-gradient(var(--book-designer-frame-color), color-mix(in oklch, var(--book-designer-frame-color) 45%, black));\n\n6. Foldable mockups may declare postures in a meta tag. Use simple sequential IDs: unfold, fold1, fold2, fold3, and so on. The plugin will set the selected ID on <html> as data-book-designer-posture, and your CSS controls the geometry:\n   <meta name="book-designer-postures" content='[{"id":"unfold","label":"Unfolded"},{"id":"fold1","label":"Fold 1"}]'>\n   html[data-book-designer-posture="fold1"] .device { /* folded geometry */ }\n   html[data-book-designer-posture="fold1"] [data-book-designer-screen] { /* folded screen position/size */ }\n\nFor safety, scripts, event attributes, external URLs, CSS imports, and nested frames are removed during import.`;
 
 function MockupImportDialog({ dialog, fileInputRef, onClose, onCopyInstructions, onNameChange, onChooseFile, onFile }: {
 	dialog: { editingId: string | null; name: string; error: string | null };
@@ -208,6 +222,7 @@ function BookPreviewFrame({
 	html,
 	mockupHtml,
 	orientation,
+	frameColor,
 	contentWidth,
 	contentHeight,
 	marginGuide,
@@ -221,6 +236,7 @@ function BookPreviewFrame({
 	html: string;
 	mockupHtml: string | null;
 	orientation: 'portrait' | 'landscape';
+	frameColor: string;
 	contentWidth: number;
 	contentHeight: number;
 	marginGuide: 'side' | 'vertical' | null;
@@ -293,6 +309,7 @@ function BookPreviewFrame({
 		pagedViewportHeight.current = 0;
 		applyLayout();
 	}, [orientation]);
+	useEffect(() => { applyImportedFrameColor(shellRef.current?.contentDocument ?? null, frameColor); }, [frameColor]);
 
 	const applyLayout = (measureAfterPaint = false) => {
 		const frame = frameRef.current;
@@ -425,6 +442,7 @@ function BookPreviewFrame({
 		// started adding its viewport rule.
 		shellDocument.documentElement.style.setProperty('overflow', 'hidden', 'important');
 		shellDocument.body.style.setProperty('overflow', 'hidden', 'important');
+		applyImportedFrameColor(shellDocument, frameColor);
 		mockupMountAttempts.current = 0;
 		if (slot.querySelector('iframe[data-book-designer-preview]')) return;
 		const previewFrame = shellDocument.createElement('iframe');
@@ -487,6 +505,16 @@ function configureBookFrameOrientation(frame: HTMLIFrameElement, orientation: 'p
 		transform: 'translate(-50%, -50%) rotate(-90deg)',
 		transformOrigin: 'center',
 	});
+}
+
+function applyImportedFrameColor(document: Document | null, frameColor: string): void {
+	if (!document) return;
+	document.documentElement.style.setProperty('--book-designer-frame-color', frameColor);
+	const screen = document.querySelector<HTMLElement>('[data-book-designer-screen]');
+	// The parent screen container is the most reliable generic frame target for
+	// imported HTML/CSS mockups. Authors can preserve their own shading with
+	// `var(--book-designer-frame-color)` in their stylesheet.
+	if (screen?.parentElement) screen.parentElement.style.backgroundColor = frameColor;
 }
 
 function applyPreviewLayout(

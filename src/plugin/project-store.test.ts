@@ -96,13 +96,13 @@ describe('BookProjectStore', () => {
 	it('restores independent content settings for each preview device', () => {
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');
-		store.updatePreview({ readerScale: 130, contentWidth: 84, contentHeight: 72 });
+		store.updatePreview({ readerScale: 130, contentWidth: 84, contentHeight: 72, frameColor: '#123456' });
 		store.updatePreview({ deviceId: 'ereader-6', mockupId: 'plain' });
-		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 100, contentWidth: 100, contentHeight: 100 });
-		store.updatePreview({ readerScale: 115, contentWidth: 92, contentHeight: 88 });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 100, contentWidth: 100, contentHeight: 100, frameColor: '#2a2a2a' });
+		store.updatePreview({ readerScale: 115, contentWidth: 92, contentHeight: 88, frameColor: '#654321' });
 		store.updatePreview({ deviceId: 'phone', mockupId: 'plain' });
-		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'phone', readerScale: 130, contentWidth: 84, contentHeight: 72 });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'phone', readerScale: 130, contentWidth: 84, contentHeight: 72, frameColor: '#123456' });
 		store.updatePreview({ deviceId: 'ereader-6', mockupId: 'plain' });
-		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 115, contentWidth: 92, contentHeight: 88 });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 115, contentWidth: 92, contentHeight: 88, frameColor: '#654321' });
 	});
 });
