@@ -37,6 +37,7 @@ export interface BookProjectPreviewState {
 	readerScale: number;
 	contentWidth: number;
 	contentHeight: number;
+	deviceContentSettings: Record<string, PreviewContentSettings>;
 	deviceScale: number;
 	autoDeviceScale: boolean;
 	customDeviceWidth: number;
@@ -49,6 +50,11 @@ export interface BookProjectPreviewState {
 	pageIndex: number;
 	activeSectionId: string | null;
 	scrollTop: number;
+}
+export interface PreviewContentSettings {
+	readerScale: number;
+	contentWidth: number;
+	contentHeight: number;
 }
 export const PREVIEW_MODES = ['continuous', 'paged'] as const;
 export type PreviewMode = (typeof PREVIEW_MODES)[number];
@@ -174,7 +180,21 @@ export class BookProjectStore {
 		this.commit(true);
 	}
 	updateDesign(design: Partial<BookProjectDesign>): void { this.updateActive((project) => ({ ...project, design: { ...project.design, ...design } }), true); }
-	updatePreview(preview: Partial<BookProjectPreviewState>): void { this.updateActive((project) => ({ ...project, preview: { ...project.preview, ...preview } }), preview.readerScale !== undefined); }
+	updatePreview(preview: Partial<BookProjectPreviewState>): void {
+		this.updateActive((project) => {
+			const previous = project.preview;
+			const next = { ...previous, ...preview };
+			const settings = { ...previous.deviceContentSettings };
+			settings[previewContentKey(previous)] = contentSettingsFromPreview(previous);
+			const targetKey = previewContentKey(next);
+			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined;
+			const target = hasContentChange
+				? normalizeContentSettings({ ...contentSettingsFromPreview(next), ...preview })
+				: settings[targetKey] ?? DEFAULT_PREVIEW_CONTENT_SETTINGS;
+			settings[targetKey] = target;
+			return { ...project, preview: { ...next, ...target, deviceContentSettings: settings } };
+		}, true);
+	}
 	addImportedMockup(mockup: ImportedHtmlMockup): void {
 		this.registry = { ...this.registry, mockups: [...this.registry.mockups, cloneImportedMockup(mockup)] };
 		this.commit(true);
@@ -280,26 +300,46 @@ function isPreviewMode(value: unknown): value is PreviewMode { return value === 
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 800 ? value : 100; }
 function validContentSpan(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : 100; }
+const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = { readerScale: 100, contentWidth: 100, contentHeight: 100 };
+function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, 'readerScale' | 'contentWidth' | 'contentHeight'>): PreviewContentSettings {
+	return { readerScale: preview.readerScale, contentWidth: preview.contentWidth, contentHeight: preview.contentHeight };
+}
+function normalizeContentSettings(value: Record<string, unknown> | PreviewContentSettings): PreviewContentSettings {
+	return { readerScale: validScale(value.readerScale), contentWidth: validContentSpan(value.contentWidth), contentHeight: validContentSpan(value.contentHeight) };
+}
+function previewContentKey(preview: Pick<BookProjectPreviewState, 'deviceId' | 'importedMockupId'>): string {
+	return preview.deviceId === 'imported' && preview.importedMockupId ? `imported:${preview.importedMockupId}` : `device:${preview.deviceId}`;
+}
+function normalizeDeviceContentSettings(value: unknown): Record<string, PreviewContentSettings> {
+	if (!isRecord(value)) return {};
+	return Object.fromEntries(Object.entries(value).flatMap(([key, candidate]) => isRecord(candidate) ? [[key, normalizeContentSettings(candidate)]] : []));
+}
 function validDeviceScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 25 && value <= 100 ? value : 100; }
 function validCustomDimension(value: unknown, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= 200 && value <= 2000 ? Math.round(value) : fallback; }
 function validScrollTop(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0; }
 function validPageIndex(value: unknown): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0; }
 function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
-	return { deviceId: deviceId === 'imported' ? 'ereader-6' : deviceId, readerScale: 100, contentWidth: 100, contentHeight: 100, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+	const resolvedDeviceId = deviceId === 'imported' ? 'ereader-6' : deviceId;
+	const content = { ...DEFAULT_PREVIEW_CONTENT_SETTINGS };
+	return { deviceId: resolvedDeviceId, ...content, deviceContentSettings: { [previewContentKey({ deviceId: resolvedDeviceId, importedMockupId: null })]: content }, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
 function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {
 	const deviceId = isPreviewDevice(value.deviceId) ? value.deviceId : defaultDevice;
+	const importedMockupId = typeof value.importedMockupId === 'string' ? value.importedMockupId : null;
+	const deviceContentSettings = normalizeDeviceContentSettings(value.deviceContentSettings);
+	const key = previewContentKey({ deviceId, importedMockupId });
+	const currentContent = deviceContentSettings[key] ?? normalizeContentSettings(value);
+	deviceContentSettings[key] = currentContent;
 	return {
 		deviceId,
-		readerScale: validScale(value.readerScale),
-		contentWidth: validContentSpan(value.contentWidth),
-		contentHeight: validContentSpan(value.contentHeight),
+		...currentContent,
+		deviceContentSettings,
 		deviceScale: validDeviceScale(value.deviceScale),
 		autoDeviceScale: typeof value.autoDeviceScale === 'boolean' ? value.autoDeviceScale : true,
 		customDeviceWidth: validCustomDimension(value.customDeviceWidth, 390),
 		customDeviceHeight: validCustomDimension(value.customDeviceHeight, 844),
 		mockupId: isPreviewMockupId(value.mockupId) ? value.mockupId : 'plain',
-		importedMockupId: typeof value.importedMockupId === 'string' ? value.importedMockupId : null,
+		importedMockupId,
 		mode: isPreviewMode(value.mode) ? value.mode : deviceId === 'ereader-6' ? 'paged' : 'continuous',
 		orientation: isPreviewOrientation(value.orientation) ? value.orientation : 'portrait',
 		pageIndex: validPageIndex(value.pageIndex),
@@ -323,7 +363,7 @@ function normalizeImportedMockups(value: unknown): ImportedHtmlMockup[] {
 	});
 }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
-function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview } } : null; }
+function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
 function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup { return { ...mockup }; }
 function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup) }; }
 function nextProjectName(folderName: string, projects: BookProject[]): string { const used = new Set(projects.map((project) => project.name)); if (!used.has(folderName)) return folderName; for (let suffix = 2; ; suffix += 1) { const candidate = `${folderName} ${suffix}`; if (!used.has(candidate)) return candidate; } }

@@ -92,4 +92,17 @@ describe('BookProjectStore', () => {
 		expect(registry.mockups).toEqual([expect.objectContaining({ id: 'legacy-frame' })]);
 		expect(registry.projects[0]?.preview).toMatchObject({ deviceId: 'imported', importedMockupId: 'legacy-frame' });
 	});
+
+	it('restores independent content settings for each preview device', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		store.updatePreview({ readerScale: 130, contentWidth: 84, contentHeight: 72 });
+		store.updatePreview({ deviceId: 'ereader-6', mockupId: 'plain' });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 100, contentWidth: 100, contentHeight: 100 });
+		store.updatePreview({ readerScale: 115, contentWidth: 92, contentHeight: 88 });
+		store.updatePreview({ deviceId: 'phone', mockupId: 'plain' });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'phone', readerScale: 130, contentWidth: 84, contentHeight: 72 });
+		store.updatePreview({ deviceId: 'ereader-6', mockupId: 'plain' });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 115, contentWidth: 92, contentHeight: 88 });
+	});
 });
