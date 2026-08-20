@@ -314,6 +314,24 @@
 	line-height: 1;
 }
 
+.book-preview-posture-button {
+	display: grid;
+	place-items: center;
+	width: 32px;
+	min-height: 32px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 50%;
+	padding: 0;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: 1rem;
+	line-height: 1;
+}
+
+.book-preview-posture-button:hover {
+	background: var(--background-modifier-hover);
+}
+
 .book-preview-settings,
 .book-preview-settings-button,
 .book-preview-toolbar-toggle {
@@ -532,6 +550,7 @@
 }
 
 .book-preview-orientation-button:focus-visible,
+.book-preview-posture-button:focus-visible,
 .book-preview-settings-button:focus-visible,
 .book-preview-toolbar-toggle:focus-visible,
 .book-preview-page-turn:focus-visible {
@@ -586,9 +605,16 @@
 	place-items: center;
 	position: relative;
 	min-height: 0;
-	overflow: auto;
+	/* Reader navigation happens in the nested book iframe. The canvas itself
+	 * must never become a second scroll container. */
+	overflow: hidden;
 	padding: 22px;
 	background: var(--background-secondary);
+	scrollbar-width: none;
+}
+
+.book-preview-canvas::-webkit-scrollbar {
+	display: none;
 }
 
 .book-preview-canvas.is-paged {
@@ -626,6 +652,18 @@
 	border: 0;
 	background: transparent;
 	box-shadow: none;
+	/* The shell is positioned to the mockup's measured visible frame. Do not
+	 * crop it a second time here: some authored frames intentionally extend a
+	 * bezel or shadow beyond that measurement. The imported document itself
+	 * remains clipped to its declared native stage. */
+	overflow: visible;
+}
+
+.book-preview-device[data-device='imported'].is-explicit-frame .book-preview-screen {
+	/* Explicit bounds are the author-approved frame viewport. Keeping this
+	 * clipped prevents the shell from increasing the outer canvas's scrollable
+	 * area while retaining the frame's own authored padding. */
+	overflow: hidden;
 }
 
 .book-preview-device {

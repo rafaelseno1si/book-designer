@@ -70,9 +70,9 @@ describe('BookProjectStore', () => {
 	it('keeps imported mockups in a shared library and clears deleted selections', () => {
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');
-		store.addImportedMockup({ id: 'phone-frame', name: 'Phone frame', html: '<html><div data-book-designer-screen></div></html>', width: 390, height: 844 });
+		store.addImportedMockup({ id: 'phone-frame', name: 'Phone frame', html: '<html><div data-book-designer-screen></div></html>', width: 390, height: 844, postures: [] });
 		store.updatePreview({ deviceId: 'imported', importedMockupId: 'phone-frame' });
-		store.replaceImportedMockup('phone-frame', { id: 'different-id', name: 'Updated frame', html: '<html><div data-book-designer-screen></div></html>', width: 400, height: 800 });
+		store.replaceImportedMockup('phone-frame', { id: 'different-id', name: 'Updated frame', html: '<html><div data-book-designer-screen></div></html>', width: 400, height: 800, postures: [] });
 
 		expect(store.getSnapshot().registry.mockups).toEqual([expect.objectContaining({ id: 'phone-frame', name: 'Updated frame', width: 400 })]);
 
@@ -104,5 +104,15 @@ describe('BookProjectStore', () => {
 		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'phone', readerScale: 130, contentWidth: 84, contentHeight: 72, frameColor: '#123456' });
 		store.updatePreview({ deviceId: 'ereader-6', mockupId: 'plain' });
 		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 115, contentWidth: 92, contentHeight: 88, frameColor: '#654321' });
+	});
+
+	it('persists an imported mockup posture separately from the shared mockup library', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		store.addImportedMockup({ id: 'razr', name: 'Razr', html: '<html><div data-book-designer-screen></div></html>', width: 820, height: 1798, postures: [{ id: 'unfold', label: 'Unfolded' }, { id: 'fold1', label: 'Folded closed' }] });
+		store.updatePreview({ deviceId: 'imported', importedMockupId: 'razr', mockupPostures: { razr: 'fold1' } });
+
+		expect(store.getSnapshot().activeProject?.preview.mockupPostures).toEqual({ razr: 'fold1' });
+		expect(store.getSnapshot().registry.mockups[0]?.postures).toEqual([{ id: 'unfold', label: 'Unfolded' }, { id: 'fold1', label: 'Folded closed' }]);
 	});
 });

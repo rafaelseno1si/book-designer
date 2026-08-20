@@ -46,6 +46,8 @@ export interface BookProjectPreviewState {
 	mockupId: PreviewMockupId;
 	/** The selected item in the persisted imported-mockup library. */
 	importedMockupId: string | null;
+	/** Last selected physical posture for each imported mockup ID. */
+	mockupPostures: Record<string, string>;
 	mode: PreviewMode;
 	orientation: PreviewOrientation;
 	pageIndex: number;
@@ -204,7 +206,19 @@ export class BookProjectStore {
 	replaceImportedMockup(mockupId: string, replacement: ImportedHtmlMockup): void {
 		if (!this.registry.mockups.some((mockup) => mockup.id === mockupId)) return;
 		const updated = { ...cloneImportedMockup(replacement), id: mockupId };
-		this.registry = { ...this.registry, mockups: this.registry.mockups.map((mockup) => mockup.id === mockupId ? updated : mockup) };
+		this.registry = {
+			...this.registry,
+			mockups: this.registry.mockups.map((mockup) => mockup.id === mockupId ? updated : mockup),
+			projects: this.registry.projects.map((project) => ({
+				...project,
+				preview: {
+					...project.preview,
+					mockupPostures: updated.postures.some((posture) => posture.id === project.preview.mockupPostures[mockupId])
+						? project.preview.mockupPostures
+						: withoutKey(project.preview.mockupPostures, mockupId),
+				},
+			})),
+		};
 		this.commit(true);
 	}
 	deleteImportedMockup(mockupId: string): void {
@@ -213,9 +227,12 @@ export class BookProjectStore {
 		this.registry = {
 			...this.registry,
 			mockups: this.registry.mockups.filter((mockup) => mockup.id !== mockupId),
-			projects: this.registry.projects.map((project) => project.preview.importedMockupId === mockupId
-				? { ...project, preview: { ...project.preview, deviceId: fallbackDevice, importedMockupId: null, mockupId: fallbackDevice === 'kindle-paperwhite' ? 'kindle-paperwhite' : 'plain', pageIndex: 0 } }
-				: project),
+			projects: this.registry.projects.map((project) => {
+				const mockupPostures = withoutKey(project.preview.mockupPostures, mockupId);
+				return project.preview.importedMockupId === mockupId
+					? { ...project, preview: { ...project.preview, deviceId: fallbackDevice, importedMockupId: null, mockupId: fallbackDevice === 'kindle-paperwhite' ? 'kindle-paperwhite' : 'plain', mockupPostures, pageIndex: 0 } }
+					: { ...project, preview: { ...project.preview, mockupPostures } };
+			}),
 		};
 		this.commit(true);
 	}
@@ -324,7 +341,7 @@ function validPageIndex(value: unknown): number { return typeof value === 'numbe
 function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
 	const resolvedDeviceId = deviceId === 'imported' ? 'ereader-6' : deviceId;
 	const content = { ...DEFAULT_PREVIEW_CONTENT_SETTINGS };
-	return { deviceId: resolvedDeviceId, ...content, deviceContentSettings: { [previewContentKey({ deviceId: resolvedDeviceId, importedMockupId: null })]: content }, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+	return { deviceId: resolvedDeviceId, ...content, deviceContentSettings: { [previewContentKey({ deviceId: resolvedDeviceId, importedMockupId: null })]: content }, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mockupPostures: {}, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
 function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {
 	const deviceId = isPreviewDevice(value.deviceId) ? value.deviceId : defaultDevice;
@@ -343,6 +360,7 @@ function normalizePreviewState(value: Record<string, unknown>, defaultDevice: Pr
 		customDeviceHeight: validCustomDimension(value.customDeviceHeight, 844),
 		mockupId: isPreviewMockupId(value.mockupId) ? value.mockupId : 'plain',
 		importedMockupId,
+		mockupPostures: normalizeMockupPostures(value.mockupPostures),
 		mode: isPreviewMode(value.mode) ? value.mode : deviceId === 'ereader-6' ? 'paged' : 'continuous',
 		orientation: isPreviewOrientation(value.orientation) ? value.orientation : 'portrait',
 		pageIndex: validPageIndex(value.pageIndex),
@@ -353,7 +371,7 @@ function normalizePreviewState(value: Record<string, unknown>, defaultDevice: Pr
 function stringOr(value: unknown, fallback: string): string { return typeof value === 'string' ? value : fallback; }
 function normalizeImportedMockup(value: unknown): ImportedHtmlMockup | null {
 	if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.html !== 'string' || value.html.length > 1_000_000) return null;
-	return { id: value.id, name: value.name, html: value.html, width: validCustomDimension(value.width, 460), height: validCustomDimension(value.height, 700) };
+	return { id: value.id, name: value.name, html: value.html, width: validCustomDimension(value.width, 460), height: validCustomDimension(value.height, 700), postures: normalizeImportedMockupPostures(value.postures) };
 }
 function normalizeImportedMockups(value: unknown): ImportedHtmlMockup[] {
 	if (!Array.isArray(value)) return [];
@@ -366,8 +384,23 @@ function normalizeImportedMockups(value: unknown): ImportedHtmlMockup[] {
 	});
 }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
-function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
-function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup { return { ...mockup }; }
+function normalizeMockupPostures(value: unknown): Record<string, string> {
+	if (!isRecord(value)) return {};
+	return Object.fromEntries(Object.entries(value).flatMap(([mockupId, posture]) => typeof posture === 'string' && /^(unfold|fold[1-9]\d*)$/.test(posture) ? [[mockupId, posture]] : []));
+}
+function normalizeImportedMockupPostures(value: unknown): ImportedHtmlMockup['postures'] {
+	if (!Array.isArray(value)) return [];
+	const seen = new Set<string>();
+	const postures = value.flatMap((candidate) => {
+		if (!isRecord(candidate) || typeof candidate.id !== 'string' || !/^(unfold|fold[1-9]\d*)$/.test(candidate.id) || seen.has(candidate.id)) return [];
+		seen.add(candidate.id);
+		return [{ id: candidate.id, label: typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : candidate.id === 'unfold' ? 'Unfolded' : `Fold ${candidate.id.slice(4)}` }];
+	});
+	return postures[0]?.id === 'unfold' && postures.every((posture, index) => posture.id === (index === 0 ? 'unfold' : `fold${index}`)) ? postures : [];
+}
+function withoutKey<T>(value: Record<string, T>, key: string): Record<string, T> { const { [key]: _, ...remaining } = value; return remaining; }
+function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview, mockupPostures: { ...project.preview.mockupPostures }, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
+function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup { return { ...mockup, postures: mockup.postures.map((posture) => ({ ...posture })) }; }
 function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup) }; }
 function nextProjectName(folderName: string, projects: BookProject[]): string { const used = new Set(projects.map((project) => project.name)); if (!used.has(folderName)) return folderName; for (let suffix = 2; ; suffix += 1) { const candidate = `${folderName} ${suffix}`; if (!used.has(candidate)) return candidate; } }
 function defaultProjectId(): string { return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }

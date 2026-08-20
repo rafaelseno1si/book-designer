@@ -14,7 +14,7 @@ interface VirtualPage {
 export class PagedBookVirtualizer {
 	private readonly mounted = new Set<number>();
 
-	private constructor(private readonly pages: VirtualPage[]) {}
+	private constructor(private readonly document: Document, private readonly pages: VirtualPage[]) {}
 
 	static create(document: Document): PagedBookVirtualizer | null {
 		const book = document.querySelector<HTMLElement>('.book');
@@ -26,7 +26,7 @@ export class PagedBookVirtualizer {
 			slot: createSlot(document, index),
 		}));
 		book.replaceChildren(...virtualPages.map((page) => page.slot));
-		return new PagedBookVirtualizer(virtualPages);
+		return new PagedBookVirtualizer(document, virtualPages);
 	}
 
 	get count(): number { return this.pages.length; }
@@ -42,7 +42,11 @@ export class PagedBookVirtualizer {
 	}
 
 	scrollToIndex(index: number): void {
-		this.pages[Math.min(Math.max(index, 0), this.pages.length - 1)]?.slot.scrollIntoView({ block: 'start', behavior: 'auto' });
+		const page = this.pages[Math.min(Math.max(index, 0), this.pages.length - 1)];
+		// scrollIntoView() is allowed to walk out through ancestor frames. In an
+		// imported device it can therefore move Book Preview's outer canvas rather
+		// than just the manuscript. Target only the nested reader window.
+		this.document.defaultView?.scrollTo({ top: page?.slot.offsetTop ?? 0, left: 0, behavior: 'auto' });
 	}
 
 	nearestIndex(scrollTop: number): number {
