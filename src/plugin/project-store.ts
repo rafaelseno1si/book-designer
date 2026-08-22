@@ -4,6 +4,7 @@ import type { ImportedHtmlMockup } from '../core/mockups/html-mockup-import';
 import { renderBookPreviewDocument } from '../core/renderer/book-preview-renderer';
 import type { FolderSourceConfig } from '../core/sources/folder-source-adapter';
 import type { PreviewDeviceId } from './settings';
+import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP } from '../core/mockups/motorola-razr-mockup';
 
 export const THEME_IDS = ['classic', 'modern', 'minimal'] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -194,7 +195,7 @@ export class BookProjectStore {
 			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined || preview.frameColor !== undefined;
 			const target = hasContentChange
 				? normalizeContentSettings({ ...contentSettingsFromPreview(next), ...preview })
-				: settings[targetKey] ?? DEFAULT_PREVIEW_CONTENT_SETTINGS;
+				: settings[targetKey] ?? defaultPreviewContentSettings(next.deviceId);
 			settings[targetKey] = target;
 			return { ...project, preview: { ...next, ...target, deviceContentSettings: settings } };
 		}, true);
@@ -314,12 +315,15 @@ function normalizeProject(value: unknown, defaultDevice: PreviewDeviceId): BookP
 		themeId: isThemeId(themeId) ? themeId : 'classic', typographyScale: isTypographyScale(typographyScale) ? typographyScale : 'comfortable', chapterStyleId: isChapterStyleId(chapterStyleId) ? chapterStyleId : 'quiet', sceneBreakId: isSceneBreakId(sceneBreakId) ? sceneBreakId : 'space',
 	}, preview: normalizePreviewState(preview, defaultDevice) }];
 }
-function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet', 'custom', 'kindle-paperwhite', 'imported'].includes(value); }
+function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet', 'custom', 'kindle-paperwhite', MOTOROLA_RAZR_ID, 'imported'].includes(value); }
 function isPreviewMode(value: unknown): value is PreviewMode { return value === 'continuous' || value === 'paged'; }
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 800 ? value : 100; }
 function validContentSpan(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : 100; }
 const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = { readerScale: 100, contentWidth: 100, contentHeight: 100, frameColor: '#2a2a2a' };
+function defaultPreviewContentSettings(deviceId: PreviewDeviceId): PreviewContentSettings {
+	return deviceId === MOTOROLA_RAZR_ID ? { ...DEFAULT_PREVIEW_CONTENT_SETTINGS, frameColor: MOTOROLA_RAZR_MOCKUP.defaultFrameColor } : { ...DEFAULT_PREVIEW_CONTENT_SETTINGS };
+}
 function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, 'readerScale' | 'contentWidth' | 'contentHeight' | 'frameColor'>): PreviewContentSettings {
 	return { readerScale: preview.readerScale, contentWidth: preview.contentWidth, contentHeight: preview.contentHeight, frameColor: preview.frameColor };
 }
@@ -340,7 +344,7 @@ function validScrollTop(value: unknown): number { return typeof value === 'numbe
 function validPageIndex(value: unknown): number { return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0; }
 function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
 	const resolvedDeviceId = deviceId === 'imported' ? 'ereader-6' : deviceId;
-	const content = { ...DEFAULT_PREVIEW_CONTENT_SETTINGS };
+	const content = defaultPreviewContentSettings(resolvedDeviceId);
 	return { deviceId: resolvedDeviceId, ...content, deviceContentSettings: { [previewContentKey({ deviceId: resolvedDeviceId, importedMockupId: null })]: content }, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mockupPostures: {}, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
 function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {

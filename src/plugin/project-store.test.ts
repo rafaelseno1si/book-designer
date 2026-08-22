@@ -106,6 +106,13 @@ describe('BookProjectStore', () => {
 		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'ereader-6', readerScale: 115, contentWidth: 92, contentHeight: 88, frameColor: '#654321' });
 	});
 
+	it('uses the built-in Razr material color for a new Razr preview', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'motorola-razr', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'motorola-razr', frameColor: '#686d73' });
+	});
+
 	it('persists an imported mockup posture separately from the shared mockup library', () => {
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');

@@ -8,6 +8,7 @@ import {
 import type { PreviewMode, BookProjectStore } from '../plugin/project-store';
 import { previewMockup } from '../core/mockups/preview-mockup';
 import { importHtmlMockup, type ImportedHtmlMockup } from '../core/mockups/html-mockup-import';
+import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP } from '../core/mockups/motorola-razr-mockup';
 import { PREVIEW_DEVICE_DIMENSIONS, PREVIEW_DEVICE_IDS, PREVIEW_DEVICE_LABELS, isPreviewDeviceId } from '../plugin/settings';
 import { ContinuousBookVirtualizer } from './continuous-book-virtualizer';
 import { PagedBookVirtualizer } from './paged-book-virtualizer';
@@ -35,17 +36,20 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const selectedImportedMockup = preview?.deviceId === 'imported'
 		? snapshot.registry.mockups.find((candidate) => candidate.id === preview.importedMockupId) ?? null
 		: null;
-	const mockupPostures = selectedImportedMockup?.postures ?? [];
-	const activeMockupPosture = selectedImportedMockup
-		? mockupPostures.find((posture) => posture.id === preview?.mockupPostures[selectedImportedMockup.id])?.id ?? mockupPostures[0]?.id ?? 'unfold'
+	const builtInHtmlMockup = preview?.deviceId === MOTOROLA_RAZR_ID ? MOTOROLA_RAZR_MOCKUP : null;
+	const selectedHtmlMockup = selectedImportedMockup ?? builtInHtmlMockup;
+	const htmlMockupKey = selectedImportedMockup ? `imported:${selectedImportedMockup.id}` : builtInHtmlMockup ? `builtin:${builtInHtmlMockup.id}` : null;
+	const mockupPostures = selectedHtmlMockup?.postures ?? [];
+	const activeMockupPosture = htmlMockupKey
+		? mockupPostures.find((posture) => posture.id === preview?.mockupPostures[htmlMockupKey])?.id ?? mockupPostures[0]?.id ?? 'unfold'
 		: null;
 	const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 	const nativeDeviceDimensions = preview?.deviceId === 'custom'
 		? { width: preview.customDeviceWidth, height: preview.customDeviceHeight }
-		: selectedImportedMockup
-			? { width: selectedImportedMockup.width, height: selectedImportedMockup.height }
+		: selectedHtmlMockup
+			? { width: selectedHtmlMockup.width, height: selectedHtmlMockup.height }
 			: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
-	const importedViewport = selectedImportedMockup && importedViewportBounds?.mockupId === selectedImportedMockup.id
+	const importedViewport = htmlMockupKey && importedViewportBounds?.mockupId === htmlMockupKey
 		? importedViewportBounds
 		: null;
 	const deviceDimensions = importedViewport
@@ -80,7 +84,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	} as CSSProperties;
 
 	useEffect(() => { latestScrollTop.current = preview?.scrollTop ?? 0; }, [project?.id]);
-	useEffect(() => { setImportedViewportBounds(null); }, [selectedImportedMockup?.id]);
+	useEffect(() => { setImportedViewportBounds(null); }, [htmlMockupKey]);
 	useEffect(() => {
 		if (!settingsOpen) return;
 		const closeWhenOutside = (event: PointerEvent) => {
@@ -152,16 +156,16 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		}
 	};
 	const cycleMockupPosture = () => {
-		if (!selectedImportedMockup || !activeMockupPosture || mockupPostures.length < 2 || !preview) return;
+		if (!htmlMockupKey || !activeMockupPosture || mockupPostures.length < 2 || !preview) return;
 		const currentIndex = mockupPostures.findIndex((posture) => posture.id === activeMockupPosture);
 		const next = mockupPostures[(currentIndex + 1) % mockupPostures.length];
 		if (!next) return;
-		projectStore.updatePreview({ mockupPostures: { ...preview.mockupPostures, [selectedImportedMockup.id]: next.id }, pageIndex: 0 });
+		projectStore.updatePreview({ mockupPostures: { ...preview.mockupPostures, [htmlMockupKey]: next.id }, pageIndex: 0 });
 	};
 	const updateImportedViewportBounds = (bounds: Omit<MockupViewportBounds, 'mockupId'>) => {
-		if (!selectedImportedMockup) return;
+		if (!htmlMockupKey) return;
 		setImportedViewportBounds((current) => {
-			const next = { mockupId: selectedImportedMockup.id, ...bounds };
+			const next = { mockupId: htmlMockupKey, ...bounds };
 			return current && current.mockupId === next.mockupId
 				&& Math.abs(current.left - next.left) < 1 && Math.abs(current.top - next.top) < 1
 				&& Math.abs(current.width - next.width) < 1 && Math.abs(current.height - next.height) < 1 && current.explicit === next.explicit
@@ -206,13 +210,13 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				</div>
 			</div>}
 		</header>
-		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}${importedViewport?.explicit ? ' is-explicit-frame' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} data-mockup={mockup.id} style={deviceStyle} aria-label="Book preview viewport">
+		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}${selectedHtmlMockup ? ' is-html-mockup' : ''}${importedViewport?.explicit ? ' is-explicit-frame' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} data-mockup={mockup.id} style={deviceStyle} aria-label="Book preview viewport">
 			<div className="book-preview-screen">
 			{!project ? <PreviewMessage title="No active project" message="Create a Book Project from a vault folder in Book Designer." />
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${preview?.deviceId === 'imported' ? selectedImportedMockup?.id ?? 'none' : 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedImportedMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupNativeSize={selectedImportedMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
@@ -589,11 +593,14 @@ function configureBookFrameOrientation(frame: HTMLIFrameElement, orientation: 'p
 function applyImportedFrameColor(document: Document | null, frameColor: string): void {
 	if (!document) return;
 	document.documentElement.style.setProperty('--book-designer-frame-color', frameColor);
-	const screen = document.querySelector<HTMLElement>('[data-book-designer-screen]');
-	// The parent screen container is the most reliable generic frame target for
-	// imported HTML/CSS mockups. Authors can preserve their own shading with
-	// `var(--book-designer-frame-color)` in their stylesheet.
-	if (screen?.parentElement) screen.parentElement.style.backgroundColor = frameColor;
+	if (document.documentElement.dataset.bookDesignerBuiltin !== 'motorola-razr') return;
+	// The source mockup used hard-coded black through most of its casing. Use a
+	// Kindle-like tonal ramp derived entirely from the selected hue instead,
+	// while retaining native-metal hardware controls.
+	const styleId = 'book-designer-razr-material';
+	const style = document.getElementById(styleId) ?? document.head.appendChild(document.createElement('style'));
+	style.id = styleId;
+	style.textContent = '.device{background:linear-gradient(105deg,color-mix(in oklch,var(--frame-base) 88%,white) 0%,color-mix(in oklch,var(--frame-base) 76%,white) 1.4%,color-mix(in oklch,var(--frame-base) 78%,black) 3.2%,color-mix(in oklch,var(--frame-base) 67%,black) 7%,color-mix(in oklch,var(--frame-base) 57%,black) 10.2%,color-mix(in oklch,var(--frame-base) 52%,black) 89.8%,color-mix(in oklch,var(--frame-base) 67%,black) 93%,color-mix(in oklch,var(--frame-base) 78%,black) 97.2%,color-mix(in oklch,var(--frame-base) 76%,white) 98.6%,color-mix(in oklch,var(--frame-base) 88%,white) 100%)!important}.power,.volume-up,.volume-down{background:linear-gradient(90deg,color-mix(in oklch,#686d73 46%,black),color-mix(in oklch,#686d73 84%,white) 56%,color-mix(in oklch,#686d73 53%,black))!important}';
 }
 
 function applyImportedMockupPosture(document: Document, posture: string): void {

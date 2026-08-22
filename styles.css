@@ -641,14 +641,16 @@
 	resize: both;
 }
 
-.book-preview-device[data-device='imported'] {
+.book-preview-device[data-device='imported'],
+.book-preview-device.is-html-mockup {
 	display: block;
 	padding: 0;
 	border: 0;
 	background: transparent;
 }
 
-.book-preview-device[data-device='imported'] .book-preview-screen {
+.book-preview-device[data-device='imported'] .book-preview-screen,
+.book-preview-device.is-html-mockup .book-preview-screen {
 	border: 0;
 	background: transparent;
 	box-shadow: none;
@@ -659,7 +661,7 @@
 	overflow: visible;
 }
 
-.book-preview-device[data-device='imported'].is-explicit-frame .book-preview-screen {
+.book-preview-device.is-html-mockup.is-explicit-frame .book-preview-screen {
 	/* Explicit bounds are the author-approved frame viewport. Keeping this
 	 * clipped prevents the shell from increasing the outer canvas's scrollable
 	 * area while retaining the frame's own authored padding. */
