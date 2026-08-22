@@ -5,6 +5,10 @@ export const MOTOROLA_RAZR_POSTURES: ImportedMockupPosture[] = [
 	{ id: 'unfold', label: 'Unfolded' },
 	{ id: 'fold1', label: 'Folded closed' },
 ];
+export const MOTOROLA_RAZR_VIEWPORT_BOUNDS = {
+	unfold: { left: 50, top: 128, width: 1060, height: 1168 },
+	fold1: { left: 334, top: 414, width: 492, height: 982 },
+} as const;
 
 /**
  * Built-in version of the tested Razr v3 import contract. It intentionally

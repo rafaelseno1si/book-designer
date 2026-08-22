@@ -1,5 +1,6 @@
 import {
 	useEffect,
+	useLayoutEffect,
 	useRef,
 	useState,
 	type CSSProperties,
@@ -8,7 +9,7 @@ import {
 import type { PreviewMode, BookProjectStore } from '../plugin/project-store';
 import { previewMockup } from '../core/mockups/preview-mockup';
 import { importHtmlMockup, type ImportedHtmlMockup } from '../core/mockups/html-mockup-import';
-import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP } from '../core/mockups/motorola-razr-mockup';
+import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP, MOTOROLA_RAZR_VIEWPORT_BOUNDS } from '../core/mockups/motorola-razr-mockup';
 import { PREVIEW_DEVICE_DIMENSIONS, PREVIEW_DEVICE_IDS, PREVIEW_DEVICE_LABELS, isPreviewDeviceId } from '../plugin/settings';
 import { ContinuousBookVirtualizer } from './continuous-book-virtualizer';
 import { PagedBookVirtualizer } from './paged-book-virtualizer';
@@ -49,9 +50,12 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		: selectedHtmlMockup
 			? { width: selectedHtmlMockup.width, height: selectedHtmlMockup.height }
 			: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
-	const importedViewport = htmlMockupKey && importedViewportBounds?.mockupId === htmlMockupKey
-		? importedViewportBounds
+	const builtInViewport = builtInHtmlMockup && htmlMockupKey && activeMockupPosture
+		? { mockupId: htmlMockupKey, ...MOTOROLA_RAZR_VIEWPORT_BOUNDS[activeMockupPosture as keyof typeof MOTOROLA_RAZR_VIEWPORT_BOUNDS], explicit: true }
 		: null;
+	const importedViewport = builtInViewport ?? (htmlMockupKey && importedViewportBounds?.mockupId === htmlMockupKey
+		? importedViewportBounds
+		: null);
 	const deviceDimensions = importedViewport
 		? { width: importedViewport.width, height: importedViewport.height }
 		: nativeDeviceDimensions;
@@ -359,22 +363,27 @@ function BookPreviewFrame({
 		applyLayout();
 	}, [orientation]);
 	useEffect(() => { applyImportedFrameColor(shellRef.current?.contentDocument ?? null, frameColor); }, [frameColor]);
-	useEffect(() => {
+	useLayoutEffect(() => {
 		const shellDocument = shellRef.current?.contentDocument;
 		if (!shellDocument || !mockupPosture) return;
 		applyImportedMockupPosture(shellDocument, mockupPosture);
-		// The authored mockup may animate screen geometry. Reflow after the
-		// transition ends so paged mode repaginates to the new physical display.
-		if (postureTransitionTimer.current !== null) window.clearTimeout(postureTransitionTimer.current);
-		postureTransitionTimer.current = window.setTimeout(() => {
+		// Imported skins may animate their geometry. The built-in Razr switches
+		// postures immediately, so it can repaginate without the transition wait.
+		const finalizePosture = () => {
 			if (!loaded.current) return;
 			const slot = shellDocument.querySelector<HTMLElement>('[data-book-designer-screen]');
-			if (slot) reportImportedViewportBounds(shellDocument, slot, onMockupViewportBoundsChangeRef.current);
+			if (slot && shellDocument.documentElement.dataset.bookDesignerBuiltin !== 'motorola-razr') reportImportedViewportBounds(shellDocument, slot, onMockupViewportBoundsChangeRef.current);
 			materializedMode.current = null;
 			pagedViewportHeight.current = 0;
 			if (frameRef.current) configureBookFrameOrientation(frameRef.current, orientation);
 			applyLayout();
-		}, 220);
+		};
+		if (shellDocument.documentElement.dataset.bookDesignerBuiltin === 'motorola-razr') {
+			finalizePosture();
+			return;
+		}
+		if (postureTransitionTimer.current !== null) window.clearTimeout(postureTransitionTimer.current);
+		postureTransitionTimer.current = window.setTimeout(finalizePosture, 220);
 	}, [mockupPosture, orientation]);
 
 	const applyLayout = (measureAfterPaint = false) => {
@@ -600,7 +609,7 @@ function applyImportedFrameColor(document: Document | null, frameColor: string):
 	const styleId = 'book-designer-razr-material';
 	const style = document.getElementById(styleId) ?? document.head.appendChild(document.createElement('style'));
 	style.id = styleId;
-	style.textContent = '.device{background:linear-gradient(105deg,color-mix(in oklch,var(--frame-base) 88%,white) 0%,color-mix(in oklch,var(--frame-base) 76%,white) 1.4%,color-mix(in oklch,var(--frame-base) 78%,black) 3.2%,color-mix(in oklch,var(--frame-base) 67%,black) 7%,color-mix(in oklch,var(--frame-base) 57%,black) 10.2%,color-mix(in oklch,var(--frame-base) 52%,black) 89.8%,color-mix(in oklch,var(--frame-base) 67%,black) 93%,color-mix(in oklch,var(--frame-base) 78%,black) 97.2%,color-mix(in oklch,var(--frame-base) 76%,white) 98.6%,color-mix(in oklch,var(--frame-base) 88%,white) 100%)!important}.power,.volume-up,.volume-down{background:linear-gradient(90deg,color-mix(in oklch,#686d73 46%,black),color-mix(in oklch,#686d73 84%,white) 56%,color-mix(in oklch,#686d73 53%,black))!important}';
+	style.textContent = '*{transition:none!important;animation:none!important}.device{background:linear-gradient(105deg,color-mix(in oklch,var(--frame-base) 88%,white) 0%,color-mix(in oklch,var(--frame-base) 76%,white) 1.4%,color-mix(in oklch,var(--frame-base) 78%,black) 3.2%,color-mix(in oklch,var(--frame-base) 67%,black) 7%,color-mix(in oklch,var(--frame-base) 57%,black) 10.2%,color-mix(in oklch,var(--frame-base) 52%,black) 89.8%,color-mix(in oklch,var(--frame-base) 67%,black) 93%,color-mix(in oklch,var(--frame-base) 78%,black) 97.2%,color-mix(in oklch,var(--frame-base) 76%,white) 98.6%,color-mix(in oklch,var(--frame-base) 88%,white) 100%)!important}.power,.volume-up,.volume-down{background:linear-gradient(90deg,color-mix(in oklch,#686d73 46%,black),color-mix(in oklch,#686d73 84%,white) 56%,color-mix(in oklch,#686d73 53%,black))!important}';
 }
 
 function applyImportedMockupPosture(document: Document, posture: string): void {
