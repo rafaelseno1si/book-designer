@@ -1,6 +1,11 @@
 import type { Book, BookMetadata } from '../core/model/book-model';
 import { isPreviewMockupId, type PreviewMockupId } from '../core/mockups/preview-mockup';
-import type { ImportedHtmlMockup } from '../core/mockups/html-mockup-import';
+import {
+	DEFAULT_MOCKUP_COLOR_CONFIG,
+	normalizeMockupColorConfig,
+	normalizeMockupFrameBounds,
+	type ImportedHtmlMockup,
+} from '../core/mockups/html-mockup-import';
 import { renderBookPreviewDocument } from '../core/renderer/book-preview-renderer';
 import type { FolderSourceConfig } from '../core/sources/folder-source-adapter';
 import type { PreviewDeviceId } from './settings';
@@ -375,7 +380,17 @@ function normalizePreviewState(value: Record<string, unknown>, defaultDevice: Pr
 function stringOr(value: unknown, fallback: string): string { return typeof value === 'string' ? value : fallback; }
 function normalizeImportedMockup(value: unknown): ImportedHtmlMockup | null {
 	if (!isRecord(value) || typeof value.id !== 'string' || typeof value.name !== 'string' || typeof value.html !== 'string' || value.html.length > 1_000_000) return null;
-	return { id: value.id, name: value.name, html: value.html, width: validCustomDimension(value.width, 460), height: validCustomDimension(value.height, 700), postures: normalizeImportedMockupPostures(value.postures) };
+	return {
+		id: value.id,
+		name: value.name,
+		html: value.html,
+		width: validCustomDimension(value.width, 460),
+		height: validCustomDimension(value.height, 700),
+		postures: normalizeImportedMockupPostures(value.postures),
+		// Old saved mockups did not declare color capability. Preserve their
+		// authored appearance and intentionally keep the picker unavailable.
+		color: normalizeMockupColorConfig(value.color) ?? { ...DEFAULT_MOCKUP_COLOR_CONFIG },
+	};
 }
 function normalizeImportedMockups(value: unknown): ImportedHtmlMockup[] {
 	if (!Array.isArray(value)) return [];
@@ -398,13 +413,19 @@ function normalizeImportedMockupPostures(value: unknown): ImportedHtmlMockup['po
 	const postures = value.flatMap((candidate) => {
 		if (!isRecord(candidate) || typeof candidate.id !== 'string' || !/^(unfold|fold[1-9]\d*)$/.test(candidate.id) || seen.has(candidate.id)) return [];
 		seen.add(candidate.id);
-		return [{ id: candidate.id, label: typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : candidate.id === 'unfold' ? 'Unfolded' : `Fold ${candidate.id.slice(4)}` }];
+		return [{
+			id: candidate.id,
+			label: typeof candidate.label === 'string' && candidate.label.trim() ? candidate.label.trim() : candidate.id === 'unfold' ? 'Unfolded' : `Fold ${candidate.id.slice(4)}`,
+			frame: normalizeMockupFrameBounds(candidate.frame),
+		}];
 	});
 	return postures[0]?.id === 'unfold' && postures.every((posture, index) => posture.id === (index === 0 ? 'unfold' : `fold${index}`)) ? postures : [];
 }
 function withoutKey<T>(value: Record<string, T>, key: string): Record<string, T> { const { [key]: _, ...remaining } = value; return remaining; }
 function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview, mockupPostures: { ...project.preview.mockupPostures }, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
-function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup { return { ...mockup, postures: mockup.postures.map((posture) => ({ ...posture })) }; }
+function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup {
+	return { ...mockup, color: { ...mockup.color }, postures: mockup.postures.map((posture) => ({ ...posture, frame: posture.frame ? { ...posture.frame } : null })) };
+}
 function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup) }; }
 function nextProjectName(folderName: string, projects: BookProject[]): string { const used = new Set(projects.map((project) => project.name)); if (!used.has(folderName)) return folderName; for (let suffix = 2; ; suffix += 1) { const candidate = `${folderName} ${suffix}`; if (!used.has(candidate)) return candidate; } }
 function defaultProjectId(): string { return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }

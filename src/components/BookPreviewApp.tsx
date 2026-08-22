@@ -8,8 +8,8 @@ import {
 } from 'react';
 import type { PreviewMode, BookProjectStore } from '../plugin/project-store';
 import { previewMockup } from '../core/mockups/preview-mockup';
-import { importHtmlMockup, type ImportedHtmlMockup } from '../core/mockups/html-mockup-import';
-import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP, MOTOROLA_RAZR_VIEWPORT_BOUNDS } from '../core/mockups/motorola-razr-mockup';
+import { importHtmlMockup, type ImportedHtmlMockup, type MockupColorConfig } from '../core/mockups/html-mockup-import';
+import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP } from '../core/mockups/motorola-razr-mockup';
 import { PREVIEW_DEVICE_DIMENSIONS, PREVIEW_DEVICE_IDS, PREVIEW_DEVICE_LABELS, isPreviewDeviceId } from '../plugin/settings';
 import { ContinuousBookVirtualizer } from './continuous-book-virtualizer';
 import { PagedBookVirtualizer } from './paged-book-virtualizer';
@@ -44,18 +44,23 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const activeMockupPosture = htmlMockupKey
 		? mockupPostures.find((posture) => posture.id === preview?.mockupPostures[htmlMockupKey])?.id ?? mockupPostures[0]?.id ?? 'unfold'
 		: null;
+	const activePostureDefinition = mockupPostures.find((posture) => posture.id === activeMockupPosture) ?? null;
 	const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 	const nativeDeviceDimensions = preview?.deviceId === 'custom'
 		? { width: preview.customDeviceWidth, height: preview.customDeviceHeight }
 		: selectedHtmlMockup
 			? { width: selectedHtmlMockup.width, height: selectedHtmlMockup.height }
 			: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
-	const builtInViewport = builtInHtmlMockup && htmlMockupKey && activeMockupPosture
-		? { mockupId: htmlMockupKey, ...MOTOROLA_RAZR_VIEWPORT_BOUNDS[activeMockupPosture as keyof typeof MOTOROLA_RAZR_VIEWPORT_BOUNDS], explicit: true }
+	// Foldable mockups declare their final visual frame for every posture. This
+	// allows posture switches to go straight to the finished geometry without
+	// measuring a transitioning iframe or guessing a device's footprint.
+	const declaredViewport = htmlMockupKey && activePostureDefinition?.frame
+		? { mockupId: htmlMockupKey, ...activePostureDefinition.frame, explicit: true }
 		: null;
-	const importedViewport = builtInViewport ?? (htmlMockupKey && importedViewportBounds?.mockupId === htmlMockupKey
+	const importedViewport = declaredViewport ?? (htmlMockupKey && importedViewportBounds?.mockupId === htmlMockupKey
 		? importedViewportBounds
 		: null);
+	const supportsFrameColor = !selectedHtmlMockup || selectedHtmlMockup.color.mode === 'tonal-ramp';
 	const deviceDimensions = importedViewport
 		? { width: importedViewport.width, height: importedViewport.height }
 		: nativeDeviceDimensions;
@@ -202,7 +207,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="800" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
 						<label className="book-preview-settings-range"><span>Side margins</span><input type="range" min="0" max="100" step="1" value={preview.contentWidth} onPointerDown={() => setMarginGuide('side')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('side')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentWidth: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentWidth}% content width`} /><output>{preview.contentWidth}%</output></label>
 						<label className="book-preview-settings-range"><span>Top &amp; bottom margins</span><input type="range" min="0" max="100" step="1" value={preview.contentHeight} onPointerDown={() => setMarginGuide('vertical')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('vertical')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentHeight: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentHeight}% content height`} /><output>{preview.contentHeight}%</output></label>
-						<label className="book-preview-settings-range book-preview-frame-color"><span>Frame color</span><input type="color" value={preview.frameColor} onChange={(event) => projectStore.updatePreview({ frameColor: event.currentTarget.value })} aria-label="Frame color" /><output>{preview.frameColor}</output></label>
+						{supportsFrameColor && <label className="book-preview-settings-range book-preview-frame-color"><span>Frame color</span><input type="color" value={preview.frameColor} onChange={(event) => projectStore.updatePreview({ frameColor: event.currentTarget.value })} aria-label="Frame color" /><output>{preview.frameColor}</output></label>}
 						<label className="book-preview-settings-range"><span>Device scale</span><input type="range" min="25" max="100" step="5" value={preview.deviceScale} onChange={(event) => projectStore.updatePreview({ deviceScale: Number(event.currentTarget.value), autoDeviceScale: false })} disabled={preview.autoDeviceScale} aria-valuetext={`${Math.round(effectiveDeviceScale)}%`} /><output>{Math.round(effectiveDeviceScale)}%</output></label>
 						<label className="book-preview-settings-checkbox"><input type="checkbox" checked={preview.autoDeviceScale} onChange={(event) => projectStore.updatePreview({ autoDeviceScale: event.currentTarget.checked })} /><span>Auto</span></label>
 						{selectedImportedMockup && <div className="book-preview-mockup-actions">
@@ -220,7 +225,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
@@ -234,7 +239,40 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	</section>;
 }
 
-const MOCKUP_IMPORT_INSTRUCTIONS = `Book Designer HTML/CSS mockup guide\n\n1. Declare the mockup's fixed native dimensions on <html>:\n   <html data-book-designer-width="390" data-book-designer-height="844">\n\n2. Include exactly one empty screen slot where the book belongs:\n   <div data-book-designer-screen></div>\n\n3. Position and size that slot with your CSS. Keep the mockup body at its fixed native dimensions; Book Designer scales the complete mockup without reflowing it.\n\n4. Include shadow space within the declared width and height. Imported mockup viewports are clipped, so a shadow that extends outside <html> or <body> will be cut off. Give the device an internal transparent margin around it instead.\n\n5. If the declared stage has extra transparent space, the device is offset inside it, or the mockup changes geometry while folding, add an explicit visual-frame wrapper. It must contain the device, its internal shadow space, and the screen slot:\n   <div class="frame-bounds" data-book-designer-frame>\n     <div class="device"><div data-book-designer-screen></div>…</div>\n   </div>\n   Book Designer uses this wrapper—rather than guessing from the screen's parent—for Auto scale and centering. Size/position it per posture while keeping the device's visual placement unchanged. Simple mockups that fill their declared stage do not need this marker.\n\n6. The optional --book-designer-frame-color CSS variable receives the user's saved frame color. Use it in your frame gradient or background when you want the color picker to tint the mockup, for example:\n   background: linear-gradient(var(--book-designer-frame-color), color-mix(in oklch, var(--book-designer-frame-color) 45%, black));\n\n7. Foldable mockups may declare postures in a meta tag. Use simple sequential IDs: unfold, fold1, fold2, fold3, and so on. The plugin will set the selected ID on <html> as data-book-designer-posture, and your CSS controls the geometry:\n   <meta name="book-designer-postures" content='[{"id":"unfold","label":"Unfolded"},{"id":"fold1","label":"Fold 1"}]'>\n   html[data-book-designer-posture="fold1"] .frame-bounds { /* posture-specific visual bounds */ }\n   html[data-book-designer-posture="fold1"] .device { /* folded geometry */ }\n   html[data-book-designer-posture="fold1"] [data-book-designer-screen] { /* folded screen position/size */ }\n\nFor safety, scripts, event attributes, external URLs, CSS imports, and nested frames are removed during import.`;
+const MOCKUP_IMPORT_INSTRUCTIONS = `Book Designer HTML/CSS mockup contract
+
+1. Use a self-contained fixed-size document. Book Designer only scales it; it never makes the mockup responsive:
+   <html data-book-designer-width="390" data-book-designer-height="844">
+
+2. Include exactly one empty book viewport:
+   <div data-book-designer-screen></div>
+   Keep the mockup, body, and screen in native CSS pixels. Include any shadow space inside the declared document dimensions: anything outside is clipped.
+
+3. For an offset device, internal shadow, or any foldable, wrap the visual device and screen in one declared final visual frame:
+   <div class="frame-bounds" data-book-designer-frame>
+     <div class="device"><div data-book-designer-screen></div>…</div>
+   </div>
+
+4. Foldable contract (required for two or more postures). Declare every final posture in order: unfold, fold1, fold2, fold3… Each posture must include its final frame bounds in native CSS pixels, measured from the document's top-left. Book Designer sets data-book-designer-posture on <html>, disables transitions, and switches directly between these finished states.
+   <meta name="book-designer-postures" content='[
+     {"id":"unfold","label":"Unfolded","frame":{"left":50,"top":128,"width":1060,"height":1168}},
+     {"id":"fold1","label":"Folded","frame":{"left":334,"top":414,"width":492,"height":982}}
+   ]'>
+   html[data-book-designer-posture="fold1"] .frame-bounds { left:334px; top:414px; width:492px; height:982px; }
+   html[data-book-designer-posture="fold1"] .device { /* final folded geometry */ }
+   html[data-book-designer-posture="fold1"] [data-book-designer-screen] { /* final screen geometry */ }
+
+5. Color contract. This is the only supported way to enable the Frame color picker:
+   <meta name="book-designer-color" content='{"mode":"tonal-ramp","hardware":"fixed"}'>
+   tonal-ramp exposes the picker and supplies --book-designer-frame-color. Derive the complete casing tonal ramp from it (do not hard-code some edges black):
+   :root { --frame-base:var(--book-designer-frame-color,#686d73); --frame-dark:color-mix(in oklch,var(--frame-base) 55%,black); --frame-light:color-mix(in oklch,var(--frame-base) 84%,white); }
+   .device { background:linear-gradient(105deg,var(--frame-light),var(--frame-dark),var(--frame-light)); }
+
+6. Hardware color is explicit. Use "hardware":"fixed" when cameras, buttons, ports, and similar hardware retain their authored colors (for example .power { background:#54585c; }). Use "hardware":"dynamic" only when those pieces intentionally use the same --book-designer-frame-color tonal ramp. For devices without user-selectable color, declare:
+   <meta name="book-designer-color" content='{"mode":"none","hardware":"fixed"}'>
+   The Frame color picker is hidden for this mockup. If the color meta tag is absent, color support is also treated as none.
+
+For safety, scripts, event attributes, external URLs, CSS imports, and nested frames are removed during import.`;
 
 function MockupImportDialog({ dialog, fileInputRef, onClose, onCopyInstructions, onNameChange, onChooseFile, onFile }: {
 	dialog: { editingId: string | null; name: string; error: string | null };
@@ -262,6 +300,8 @@ function BookPreviewFrame({
 	html,
 	mockupHtml,
 	mockupPosture,
+	mockupColor,
+	hasDeclaredPostureFrame,
 	mockupNativeSize,
 	mockupViewportBounds,
 	orientation,
@@ -280,6 +320,8 @@ function BookPreviewFrame({
 	html: string;
 	mockupHtml: string | null;
 	mockupPosture: string | null;
+	mockupColor: MockupColorConfig | null;
+	hasDeclaredPostureFrame: boolean;
 	mockupNativeSize: { width: number; height: number } | null;
 	mockupViewportBounds: MockupViewportBounds | null;
 	orientation: 'portrait' | 'landscape';
@@ -362,29 +404,30 @@ function BookPreviewFrame({
 		pagedViewportHeight.current = 0;
 		applyLayout();
 	}, [orientation]);
-	useEffect(() => { applyImportedFrameColor(shellRef.current?.contentDocument ?? null, frameColor); }, [frameColor]);
+	useEffect(() => { applyImportedFrameColor(shellRef.current?.contentDocument ?? null, frameColor, mockupColor); }, [frameColor, mockupColor]);
 	useLayoutEffect(() => {
 		const shellDocument = shellRef.current?.contentDocument;
 		if (!shellDocument || !mockupPosture) return;
 		applyImportedMockupPosture(shellDocument, mockupPosture);
-		// Imported skins may animate their geometry. The built-in Razr switches
-		// postures immediately, so it can repaginate without the transition wait.
+		// Foldable mockups with declared final frame bounds switch immediately.
+		// This is the shared built-in/imported contract: no runtime geometry
+		// guessing and no authored transition can leave an intermediate frame.
 		const finalizePosture = () => {
 			if (!loaded.current) return;
 			const slot = shellDocument.querySelector<HTMLElement>('[data-book-designer-screen]');
-			if (slot && shellDocument.documentElement.dataset.bookDesignerBuiltin !== 'motorola-razr') reportImportedViewportBounds(shellDocument, slot, onMockupViewportBoundsChangeRef.current);
+			if (slot && !hasDeclaredPostureFrame) reportImportedViewportBounds(shellDocument, slot, onMockupViewportBoundsChangeRef.current);
 			materializedMode.current = null;
 			pagedViewportHeight.current = 0;
 			if (frameRef.current) configureBookFrameOrientation(frameRef.current, orientation);
 			applyLayout();
 		};
-		if (shellDocument.documentElement.dataset.bookDesignerBuiltin === 'motorola-razr') {
+		if (hasDeclaredPostureFrame) {
 			finalizePosture();
 			return;
 		}
 		if (postureTransitionTimer.current !== null) window.clearTimeout(postureTransitionTimer.current);
 		postureTransitionTimer.current = window.setTimeout(finalizePosture, 220);
-	}, [mockupPosture, orientation]);
+	}, [mockupPosture, orientation, hasDeclaredPostureFrame]);
 
 	const applyLayout = (measureAfterPaint = false) => {
 		const frame = frameRef.current;
@@ -528,9 +571,10 @@ function BookPreviewFrame({
 		// started adding its viewport rule.
 		shellDocument.documentElement.style.setProperty('overflow', 'hidden', 'important');
 		shellDocument.body.style.setProperty('overflow', 'hidden', 'important');
-		applyImportedFrameColor(shellDocument, frameColor);
+		applyImportedFrameColor(shellDocument, frameColor, mockupColor);
 		if (mockupPosture) applyImportedMockupPosture(shellDocument, mockupPosture);
-		reportImportedViewportBounds(shellDocument, slot, onMockupViewportBoundsChangeRef.current);
+		if (hasDeclaredPostureFrame) applyStaticPostureStyles(shellDocument);
+		else reportImportedViewportBounds(shellDocument, slot, onMockupViewportBoundsChangeRef.current);
 		mockupMountAttempts.current = 0;
 		if (slot.querySelector('iframe[data-book-designer-preview]')) return;
 		const previewFrame = shellDocument.createElement('iframe');
@@ -599,8 +643,12 @@ function configureBookFrameOrientation(frame: HTMLIFrameElement, orientation: 'p
 	});
 }
 
-function applyImportedFrameColor(document: Document | null, frameColor: string): void {
+function applyImportedFrameColor(document: Document | null, frameColor: string, color: MockupColorConfig | null): void {
 	if (!document) return;
+	if (color?.mode === 'none') {
+		document.documentElement.style.removeProperty('--book-designer-frame-color');
+		return;
+	}
 	document.documentElement.style.setProperty('--book-designer-frame-color', frameColor);
 	if (document.documentElement.dataset.bookDesignerBuiltin !== 'motorola-razr') return;
 	// The source mockup used hard-coded black through most of its casing. Use a
@@ -609,7 +657,16 @@ function applyImportedFrameColor(document: Document | null, frameColor: string):
 	const styleId = 'book-designer-razr-material';
 	const style = document.getElementById(styleId) ?? document.head.appendChild(document.createElement('style'));
 	style.id = styleId;
-	style.textContent = '*{transition:none!important;animation:none!important}.device{background:linear-gradient(105deg,color-mix(in oklch,var(--frame-base) 88%,white) 0%,color-mix(in oklch,var(--frame-base) 76%,white) 1.4%,color-mix(in oklch,var(--frame-base) 78%,black) 3.2%,color-mix(in oklch,var(--frame-base) 67%,black) 7%,color-mix(in oklch,var(--frame-base) 57%,black) 10.2%,color-mix(in oklch,var(--frame-base) 52%,black) 89.8%,color-mix(in oklch,var(--frame-base) 67%,black) 93%,color-mix(in oklch,var(--frame-base) 78%,black) 97.2%,color-mix(in oklch,var(--frame-base) 76%,white) 98.6%,color-mix(in oklch,var(--frame-base) 88%,white) 100%)!important}.power,.volume-up,.volume-down{background:linear-gradient(90deg,color-mix(in oklch,#686d73 46%,black),color-mix(in oklch,#686d73 84%,white) 56%,color-mix(in oklch,#686d73 53%,black))!important}';
+	style.textContent = '.device{background:linear-gradient(105deg,color-mix(in oklch,var(--frame-base) 88%,white) 0%,color-mix(in oklch,var(--frame-base) 76%,white) 1.4%,color-mix(in oklch,var(--frame-base) 78%,black) 3.2%,color-mix(in oklch,var(--frame-base) 67%,black) 7%,color-mix(in oklch,var(--frame-base) 57%,black) 10.2%,color-mix(in oklch,var(--frame-base) 52%,black) 89.8%,color-mix(in oklch,var(--frame-base) 67%,black) 93%,color-mix(in oklch,var(--frame-base) 78%,black) 97.2%,color-mix(in oklch,var(--frame-base) 76%,white) 98.6%,color-mix(in oklch,var(--frame-base) 88%,white) 100%)!important}.power,.volume-up,.volume-down{background:linear-gradient(90deg,color-mix(in oklch,#686d73 46%,black),color-mix(in oklch,#686d73 84%,white) 56%,color-mix(in oklch,#686d73 53%,black))!important}';
+}
+
+function applyStaticPostureStyles(document: Document): void {
+	const styleId = 'book-designer-static-postures';
+	const style = document.getElementById(styleId) ?? document.head.appendChild(document.createElement('style'));
+	style.id = styleId;
+	// The declared frame bounds are final states, so visual transitions serve no
+	// purpose and otherwise expose a transient, incorrectly-sized device.
+	style.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}';
 }
 
 function applyImportedMockupPosture(document: Document, posture: string): void {

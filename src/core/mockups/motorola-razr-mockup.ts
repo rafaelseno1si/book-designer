@@ -1,14 +1,14 @@
 import type { ImportedMockupPosture } from './html-mockup-import';
 
 export const MOTOROLA_RAZR_ID = 'motorola-razr' as const;
-export const MOTOROLA_RAZR_POSTURES: ImportedMockupPosture[] = [
-	{ id: 'unfold', label: 'Unfolded' },
-	{ id: 'fold1', label: 'Folded closed' },
-];
 export const MOTOROLA_RAZR_VIEWPORT_BOUNDS = {
 	unfold: { left: 50, top: 128, width: 1060, height: 1168 },
 	fold1: { left: 334, top: 414, width: 492, height: 982 },
 } as const;
+export const MOTOROLA_RAZR_POSTURES: ImportedMockupPosture[] = [
+	{ id: 'unfold', label: 'Unfolded', frame: MOTOROLA_RAZR_VIEWPORT_BOUNDS.unfold },
+	{ id: 'fold1', label: 'Folded closed', frame: MOTOROLA_RAZR_VIEWPORT_BOUNDS.fold1 },
+];
 
 /**
  * Built-in version of the tested Razr v3 import contract. It intentionally
@@ -27,5 +27,6 @@ export const MOTOROLA_RAZR_MOCKUP = {
 	width: 1160,
 	height: 1840,
 	postures: MOTOROLA_RAZR_POSTURES,
+	color: { mode: 'tonal-ramp', hardware: 'fixed' },
 	defaultFrameColor: '#686d73',
 } as const;

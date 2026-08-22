@@ -70,9 +70,9 @@ describe('BookProjectStore', () => {
 	it('keeps imported mockups in a shared library and clears deleted selections', () => {
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');
-		store.addImportedMockup({ id: 'phone-frame', name: 'Phone frame', html: '<html><div data-book-designer-screen></div></html>', width: 390, height: 844, postures: [] });
+		store.addImportedMockup({ id: 'phone-frame', name: 'Phone frame', html: '<html><div data-book-designer-screen></div></html>', width: 390, height: 844, postures: [], color: { mode: 'none', hardware: 'fixed' } });
 		store.updatePreview({ deviceId: 'imported', importedMockupId: 'phone-frame' });
-		store.replaceImportedMockup('phone-frame', { id: 'different-id', name: 'Updated frame', html: '<html><div data-book-designer-screen></div></html>', width: 400, height: 800, postures: [] });
+		store.replaceImportedMockup('phone-frame', { id: 'different-id', name: 'Updated frame', html: '<html><div data-book-designer-screen></div></html>', width: 400, height: 800, postures: [], color: { mode: 'tonal-ramp', hardware: 'dynamic' } });
 
 		expect(store.getSnapshot().registry.mockups).toEqual([expect.objectContaining({ id: 'phone-frame', name: 'Updated frame', width: 400 })]);
 
@@ -90,6 +90,7 @@ describe('BookProjectStore', () => {
 		}, 'phone');
 
 		expect(registry.mockups).toEqual([expect.objectContaining({ id: 'legacy-frame' })]);
+		expect(registry.mockups[0]?.color).toEqual({ mode: 'none', hardware: 'fixed' });
 		expect(registry.projects[0]?.preview).toMatchObject({ deviceId: 'imported', importedMockupId: 'legacy-frame' });
 	});
 
@@ -116,10 +117,10 @@ describe('BookProjectStore', () => {
 	it('persists an imported mockup posture separately from the shared mockup library', () => {
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');
-		store.addImportedMockup({ id: 'razr', name: 'Razr', html: '<html><div data-book-designer-screen></div></html>', width: 820, height: 1798, postures: [{ id: 'unfold', label: 'Unfolded' }, { id: 'fold1', label: 'Folded closed' }] });
+		store.addImportedMockup({ id: 'razr', name: 'Razr', html: '<html><div data-book-designer-screen></div></html>', width: 820, height: 1798, postures: [{ id: 'unfold', label: 'Unfolded', frame: { left: 0, top: 0, width: 820, height: 1200 } }, { id: 'fold1', label: 'Folded closed', frame: { left: 180, top: 300, width: 460, height: 900 } }], color: { mode: 'tonal-ramp', hardware: 'fixed' } });
 		store.updatePreview({ deviceId: 'imported', importedMockupId: 'razr', mockupPostures: { razr: 'fold1' } });
 
 		expect(store.getSnapshot().activeProject?.preview.mockupPostures).toEqual({ razr: 'fold1' });
-		expect(store.getSnapshot().registry.mockups[0]?.postures).toEqual([{ id: 'unfold', label: 'Unfolded' }, { id: 'fold1', label: 'Folded closed' }]);
+		expect(store.getSnapshot().registry.mockups[0]?.postures).toEqual([{ id: 'unfold', label: 'Unfolded', frame: { left: 0, top: 0, width: 820, height: 1200 } }, { id: 'fold1', label: 'Folded closed', frame: { left: 180, top: 300, width: 460, height: 900 } }]);
 	});
 });
