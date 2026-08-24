@@ -6,6 +6,7 @@ import {
 	normalizeMockupFrameBounds,
 	type ImportedHtmlMockup,
 } from '../core/mockups/html-mockup-import';
+import { DEFAULT_DISPLAY_PROFILE, normalizeDisplayProfile } from '../core/mockups/display-profile';
 import { renderBookPreviewDocument } from '../core/renderer/book-preview-renderer';
 import type { FolderSourceConfig } from '../core/sources/folder-source-adapter';
 import type { PreviewDeviceId } from './settings';
@@ -44,6 +45,12 @@ export interface BookProjectPreviewState {
 	contentWidth: number;
 	contentHeight: number;
 	frameColor: string;
+	displayTheme: DisplayTheme;
+	brightness: number;
+	warmth: number;
+	einkRenderMode: EInkRenderMode;
+	colorSoftTone: ColorSoftTone;
+	publisherFontSettings: boolean;
 	deviceContentSettings: Record<string, PreviewContentSettings>;
 	deviceScale: number;
 	autoDeviceScale: boolean;
@@ -65,7 +72,20 @@ export interface PreviewContentSettings {
 	contentWidth: number;
 	contentHeight: number;
 	frameColor: string;
+	/** User-facing display controls, stored independently for each device. */
+	displayTheme: DisplayTheme;
+	brightness: number;
+	warmth: number;
+	einkRenderMode: EInkRenderMode;
+	colorSoftTone: ColorSoftTone;
+	publisherFontSettings: boolean;
 }
+export const DISPLAY_THEMES = ['light', 'dark', 'sepia', 'mint'] as const;
+export type DisplayTheme = (typeof DISPLAY_THEMES)[number];
+export const EINK_RENDER_MODES = ['monochrome', 'colorsoft'] as const;
+export type EInkRenderMode = (typeof EINK_RENDER_MODES)[number];
+export const COLORSOFT_TONES = ['standard', 'vivid'] as const;
+export type ColorSoftTone = (typeof COLORSOFT_TONES)[number];
 export const PREVIEW_MODES = ['continuous', 'paged'] as const;
 export type PreviewMode = (typeof PREVIEW_MODES)[number];
 export const PREVIEW_ORIENTATIONS = ['portrait', 'landscape'] as const;
@@ -197,7 +217,9 @@ export class BookProjectStore {
 			const settings = { ...previous.deviceContentSettings };
 			settings[previewContentKey(previous)] = contentSettingsFromPreview(previous);
 			const targetKey = previewContentKey(next);
-			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined || preview.frameColor !== undefined;
+			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined || preview.frameColor !== undefined
+				|| preview.displayTheme !== undefined || preview.brightness !== undefined || preview.warmth !== undefined
+				|| preview.einkRenderMode !== undefined || preview.colorSoftTone !== undefined || preview.publisherFontSettings !== undefined;
 			const target = hasContentChange
 				? normalizeContentSettings({ ...contentSettingsFromPreview(next), ...preview })
 				: settings[targetKey] ?? defaultPreviewContentSettings(next.deviceId);
@@ -325,16 +347,53 @@ function isPreviewMode(value: unknown): value is PreviewMode { return value === 
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 800 ? value : 100; }
 function validContentSpan(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? value : 100; }
-const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = { readerScale: 100, contentWidth: 100, contentHeight: 100, frameColor: '#2a2a2a' };
+const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = {
+	readerScale: 100,
+	contentWidth: 100,
+	contentHeight: 100,
+	frameColor: '#2a2a2a',
+	displayTheme: 'light',
+	brightness: 100,
+	warmth: 0,
+	einkRenderMode: 'monochrome',
+	colorSoftTone: 'standard',
+	publisherFontSettings: true,
+};
 function defaultPreviewContentSettings(deviceId: PreviewDeviceId): PreviewContentSettings {
 	return deviceId === MOTOROLA_RAZR_ID ? { ...DEFAULT_PREVIEW_CONTENT_SETTINGS, frameColor: MOTOROLA_RAZR_MOCKUP.defaultFrameColor } : { ...DEFAULT_PREVIEW_CONTENT_SETTINGS };
 }
-function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, 'readerScale' | 'contentWidth' | 'contentHeight' | 'frameColor'>): PreviewContentSettings {
-	return { readerScale: preview.readerScale, contentWidth: preview.contentWidth, contentHeight: preview.contentHeight, frameColor: preview.frameColor };
+function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, keyof PreviewContentSettings>): PreviewContentSettings {
+	return {
+		readerScale: preview.readerScale,
+		contentWidth: preview.contentWidth,
+		contentHeight: preview.contentHeight,
+		frameColor: preview.frameColor,
+		displayTheme: preview.displayTheme,
+		brightness: preview.brightness,
+		warmth: preview.warmth,
+		einkRenderMode: preview.einkRenderMode,
+		colorSoftTone: preview.colorSoftTone,
+		publisherFontSettings: preview.publisherFontSettings,
+	};
 }
 function normalizeContentSettings(value: Record<string, unknown> | PreviewContentSettings): PreviewContentSettings {
-	return { readerScale: validScale(value.readerScale), contentWidth: validContentSpan(value.contentWidth), contentHeight: validContentSpan(value.contentHeight), frameColor: validFrameColor(value.frameColor) };
+	return {
+		readerScale: validScale(value.readerScale),
+		contentWidth: validContentSpan(value.contentWidth),
+		contentHeight: validContentSpan(value.contentHeight),
+		frameColor: validFrameColor(value.frameColor),
+		displayTheme: isDisplayTheme(value.displayTheme) ? value.displayTheme : 'light',
+		brightness: validPercentage(value.brightness, 100),
+		warmth: validPercentage(value.warmth, 0),
+		einkRenderMode: isEInkRenderMode(value.einkRenderMode) ? value.einkRenderMode : 'monochrome',
+		colorSoftTone: isColorSoftTone(value.colorSoftTone) ? value.colorSoftTone : 'standard',
+		publisherFontSettings: typeof value.publisherFontSettings === 'boolean' ? value.publisherFontSettings : true,
+	};
 }
+function isDisplayTheme(value: unknown): value is DisplayTheme { return typeof value === 'string' && DISPLAY_THEMES.includes(value as DisplayTheme); }
+function isEInkRenderMode(value: unknown): value is EInkRenderMode { return typeof value === 'string' && EINK_RENDER_MODES.includes(value as EInkRenderMode); }
+function isColorSoftTone(value: unknown): value is ColorSoftTone { return typeof value === 'string' && COLORSOFT_TONES.includes(value as ColorSoftTone); }
+function validPercentage(value: unknown, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : fallback; }
 function validFrameColor(value: unknown): string { return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_PREVIEW_CONTENT_SETTINGS.frameColor; }
 function previewContentKey(preview: Pick<BookProjectPreviewState, 'deviceId' | 'importedMockupId'>): string {
 	return preview.deviceId === 'imported' && preview.importedMockupId ? `imported:${preview.importedMockupId}` : `device:${preview.deviceId}`;
@@ -390,6 +449,7 @@ function normalizeImportedMockup(value: unknown): ImportedHtmlMockup | null {
 		// Old saved mockups did not declare color capability. Preserve their
 		// authored appearance and intentionally keep the picker unavailable.
 		color: normalizeMockupColorConfig(value.color) ?? { ...DEFAULT_MOCKUP_COLOR_CONFIG },
+		display: normalizeDisplayProfile(value.display) ?? { ...DEFAULT_DISPLAY_PROFILE },
 	};
 }
 function normalizeImportedMockups(value: unknown): ImportedHtmlMockup[] {
@@ -424,7 +484,7 @@ function normalizeImportedMockupPostures(value: unknown): ImportedHtmlMockup['po
 function withoutKey<T>(value: Record<string, T>, key: string): Record<string, T> { const { [key]: _, ...remaining } = value; return remaining; }
 function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview, mockupPostures: { ...project.preview.mockupPostures }, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
 function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup {
-	return { ...mockup, color: { ...mockup.color }, postures: mockup.postures.map((posture) => ({ ...posture, frame: posture.frame ? { ...posture.frame } : null })) };
+	return { ...mockup, color: { ...mockup.color }, display: { ...mockup.display }, postures: mockup.postures.map((posture) => ({ ...posture, frame: posture.frame ? { ...posture.frame } : null })) };
 }
 function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup) }; }
 function nextProjectName(folderName: string, projects: BookProject[]): string { const used = new Set(projects.map((project) => project.name)); if (!used.has(folderName)) return folderName; for (let suffix = 2; ; suffix += 1) { const candidate = `${folderName} ${suffix}`; if (!used.has(candidate)) return candidate; } }

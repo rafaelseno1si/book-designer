@@ -33,6 +33,8 @@ export interface ImportedHtmlMockup {
 	postures: ImportedMockupPosture[];
 	/** Declared color capability; no declaration means no color picker. */
 	color: MockupColorConfig;
+	/** Screen technology determines the reader simulation and available controls. */
+	display: DeviceDisplayProfile;
 }
 
 export type HtmlMockupImportResult =
@@ -60,6 +62,8 @@ export function importHtmlMockup(source: string, name: string): HtmlMockupImport
 	}
 	const colorResult = parseMockupColorConfig(document);
 	if (!colorResult.ok) return colorResult;
+	const displayResult = parseDisplayProfile(document);
+	if (!displayResult.ok) return displayResult;
 	if (colorResult.color.mode === 'tonal-ramp' && !Array.from(document.querySelectorAll('style')).some((style) => style.textContent?.includes('--book-designer-frame-color'))) {
 		return { ok: false, error: 'A tonal-ramp mockup must use --book-designer-frame-color in its self-contained CSS.' };
 	}
@@ -94,6 +98,7 @@ export function importHtmlMockup(source: string, name: string): HtmlMockupImport
 			height,
 			postures: postureResult.postures,
 			color: colorResult.color,
+			display: displayResult.display,
 		},
 	};
 }
@@ -157,6 +162,19 @@ function parseMockupColorConfig(document: Document): { ok: true; color: MockupCo
 	}
 }
 
+function parseDisplayProfile(document: Document): { ok: true; display: DeviceDisplayProfile } | { ok: false; error: string } {
+	const declaration = document.querySelector('meta[name="book-designer-display"]')?.getAttribute('content');
+	if (!declaration) return { ok: true, display: { ...DEFAULT_DISPLAY_PROFILE } };
+	try {
+		const display = normalizeDisplayProfile(JSON.parse(declaration));
+		return display
+			? { ok: true, display }
+			: { ok: false, error: 'The book-designer-display meta tag must be { "category": "oled-lcd" | "eink" }.' };
+	} catch {
+		return { ok: false, error: 'The book-designer-display meta tag must contain valid JSON.' };
+	}
+}
+
 export function normalizeMockupFrameBounds(value: unknown): MockupFrameBounds | null {
 	if (!isRecord(value)) return null;
 	const { left, top, width, height } = value;
@@ -187,3 +205,8 @@ function dimension(value: string | null, fallback: number): number {
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+import {
+	DEFAULT_DISPLAY_PROFILE,
+	normalizeDisplayProfile,
+	type DeviceDisplayProfile,
+} from './display-profile';

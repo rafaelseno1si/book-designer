@@ -6,7 +6,8 @@ import {
 	type CSSProperties,
 	type RefObject,
 } from 'react';
-import type { PreviewMode, BookProjectStore } from '../plugin/project-store';
+import type { PreviewContentSettings, PreviewMode, BookProjectStore } from '../plugin/project-store';
+import { builtInDisplayCategory, type DisplayCategory } from '../core/mockups/display-profile';
 import { previewMockup } from '../core/mockups/preview-mockup';
 import { importHtmlMockup, type ImportedHtmlMockup, type MockupColorConfig } from '../core/mockups/html-mockup-import';
 import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP } from '../core/mockups/motorola-razr-mockup';
@@ -61,6 +62,10 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		? importedViewportBounds
 		: null);
 	const supportsFrameColor = !selectedHtmlMockup || selectedHtmlMockup.color.mode === 'tonal-ramp';
+	const displayCategory: DisplayCategory = selectedHtmlMockup?.display.category
+		?? builtInDisplayCategory(preview?.deviceId);
+	const isEInk = displayCategory === 'eink';
+	const isColorSoft = isEInk && preview?.einkRenderMode === 'colorsoft';
 	const deviceDimensions = importedViewport
 		? { width: importedViewport.width, height: importedViewport.height }
 		: nativeDeviceDimensions;
@@ -204,6 +209,12 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				<div ref={settingsRef} className="book-preview-settings">
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => { if (open) setMarginGuide(null); return !open; })} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
+						{isEInk
+							? <><label className="book-preview-settings-range"><span>Render mode</span><select value={preview.einkRenderMode} onChange={(event) => projectStore.updatePreview({ einkRenderMode: event.currentTarget.value as 'monochrome' | 'colorsoft' })}><option value="monochrome">Monochrome</option><option value="colorsoft">Colorsoft</option></select></label><label className="book-preview-settings-range"><span>Theme mode</span><select value={preview.displayTheme === 'dark' ? 'dark' : 'light'} onChange={(event) => projectStore.updatePreview({ displayTheme: event.currentTarget.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>{isColorSoft && <label className="book-preview-settings-range"><span>Color mode</span><select value={preview.colorSoftTone} onChange={(event) => projectStore.updatePreview({ colorSoftTone: event.currentTarget.value as 'standard' | 'vivid' })}><option value="standard">Standard</option><option value="vivid">Vivid</option></select></label>}</>
+							: <label className="book-preview-settings-range"><span>Theme mode</span><select value={preview.displayTheme} onChange={(event) => projectStore.updatePreview({ displayTheme: event.currentTarget.value as 'light' | 'dark' | 'sepia' | 'mint' })}><option value="light">Light</option><option value="dark">Dark</option><option value="sepia">Sepia</option><option value="mint">Mint</option></select></label>}
+						<label className="book-preview-settings-range"><span>Brightness</span><input type="range" min="0" max="100" step="1" value={preview.brightness} onChange={(event) => projectStore.updatePreview({ brightness: Number(event.currentTarget.value) })} /><output>{preview.brightness}%</output></label>
+						<label className="book-preview-settings-range"><span>Warmth</span><input type="range" min="0" max="100" step="1" value={preview.warmth} onChange={(event) => projectStore.updatePreview({ warmth: Number(event.currentTarget.value) })} /><output>{preview.warmth}%</output></label>
+						<label className="book-preview-settings-checkbox"><input type="checkbox" checked={preview.publisherFontSettings} onChange={(event) => projectStore.updatePreview({ publisherFontSettings: event.currentTarget.checked })} /><span>Publisher font settings mode</span></label>
 						<label className="book-preview-settings-range"><span>Font size</span><input type="range" min="85" max="800" step="5" value={preview.readerScale} onChange={(event) => projectStore.updatePreview({ readerScale: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.readerScale}%`} /><output>{preview.readerScale}%</output></label>
 						<label className="book-preview-settings-range"><span>Side margins</span><input type="range" min="0" max="100" step="1" value={preview.contentWidth} onPointerDown={() => setMarginGuide('side')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('side')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentWidth: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentWidth}% content width`} /><output>{preview.contentWidth}%</output></label>
 						<label className="book-preview-settings-range"><span>Top &amp; bottom margins</span><input type="range" min="0" max="100" step="1" value={preview.contentHeight} onPointerDown={() => setMarginGuide('vertical')} onPointerUp={() => setMarginGuide(null)} onPointerCancel={() => setMarginGuide(null)} onFocus={() => setMarginGuide('vertical')} onBlur={() => setMarginGuide(null)} onChange={(event) => projectStore.updatePreview({ contentHeight: Number(event.currentTarget.value), pageIndex: 0 })} aria-valuetext={`${preview.contentHeight}% content height`} /><output>{preview.contentHeight}%</output></label>
@@ -225,7 +236,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} displayCategory={displayCategory} displaySettings={preview!} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
@@ -262,13 +273,17 @@ const MOCKUP_IMPORT_INSTRUCTIONS = `Book Designer HTML/CSS mockup contract
    html[data-book-designer-posture="fold1"] .device { /* final folded geometry */ }
    html[data-book-designer-posture="fold1"] [data-book-designer-screen] { /* final screen geometry */ }
 
-5. Color contract. This is the only supported way to enable the Frame color picker:
+5. Declare the screen technology. OLED/LCD is the default when this tag is absent. Use e-ink for a matte pigment display with monochrome/Colorsoft controls:
+   <meta name="book-designer-display" content='{"category":"oled-lcd"}'>
+   <!-- or --> <meta name="book-designer-display" content='{"category":"eink"}'>
+
+6. Color contract. This is the only supported way to enable the Frame color picker:
    <meta name="book-designer-color" content='{"mode":"tonal-ramp","hardware":"fixed"}'>
    tonal-ramp exposes the picker and supplies --book-designer-frame-color. Derive the complete casing tonal ramp from it (do not hard-code some edges black):
    :root { --frame-base:var(--book-designer-frame-color,#686d73); --frame-dark:color-mix(in oklch,var(--frame-base) 55%,black); --frame-light:color-mix(in oklch,var(--frame-base) 84%,white); }
    .device { background:linear-gradient(105deg,var(--frame-light),var(--frame-dark),var(--frame-light)); }
 
-6. Hardware color is explicit. Use "hardware":"fixed" when cameras, buttons, ports, and similar hardware retain their authored colors (for example .power { background:#54585c; }). Use "hardware":"dynamic" only when those pieces intentionally use the same --book-designer-frame-color tonal ramp. For devices without user-selectable color, declare:
+7. Hardware color is explicit. Use "hardware":"fixed" when cameras, buttons, ports, and similar hardware retain their authored colors (for example .power { background:#54585c; }). Use "hardware":"dynamic" only when those pieces intentionally use the same --book-designer-frame-color tonal ramp. For devices without user-selectable color, declare:
    <meta name="book-designer-color" content='{"mode":"none","hardware":"fixed"}'>
    The Frame color picker is hidden for this mockup. If the color meta tag is absent, color support is also treated as none.
 
@@ -302,6 +317,8 @@ function BookPreviewFrame({
 	mockupPosture,
 	mockupColor,
 	hasDeclaredPostureFrame,
+	displayCategory,
+	displaySettings,
 	mockupNativeSize,
 	mockupViewportBounds,
 	orientation,
@@ -322,6 +339,8 @@ function BookPreviewFrame({
 	mockupPosture: string | null;
 	mockupColor: MockupColorConfig | null;
 	hasDeclaredPostureFrame: boolean;
+	displayCategory: DisplayCategory;
+	displaySettings: Pick<PreviewContentSettings, 'displayTheme' | 'brightness' | 'warmth' | 'einkRenderMode' | 'colorSoftTone' | 'publisherFontSettings'>;
 	mockupNativeSize: { width: number; height: number } | null;
 	mockupViewportBounds: MockupViewportBounds | null;
 	orientation: 'portrait' | 'landscape';
@@ -385,9 +404,15 @@ function BookPreviewFrame({
 		pagedVirtualizer.current = null;
 		materializedMode.current = null;
 		patchPreviewDocument(document, html);
+		applyPreviewDisplay(document, displayCategory, displaySettings);
 		renderedHtml.current = html;
 		applyLayout();
 	}, [html]);
+	useEffect(() => {
+		const document = frameRef.current?.contentDocument;
+		if (!loaded.current || !document) return;
+		applyPreviewDisplay(document, displayCategory, displaySettings);
+	}, [displayCategory, displaySettings.displayTheme, displaySettings.brightness, displaySettings.warmth, displaySettings.einkRenderMode, displaySettings.colorSoftTone, displaySettings.publisherFontSettings]);
 	useEffect(() => { if (loaded.current) applyLayout(); }, [mode, pageIndex, marginGuide]);
 	useEffect(() => {
 		if (!loaded.current) return;
@@ -501,6 +526,7 @@ function BookPreviewFrame({
 		frameCleanup.current?.();
 		loaded.current = true;
 		renderedHtml.current = html;
+		applyPreviewDisplay(frame.contentDocument, displayCategory, displaySettings);
 		applyLayout();
 		resizeObserver.current?.disconnect();
 		const invalidateForResize = () => {
@@ -695,6 +721,99 @@ function reportImportedViewportBounds(
 	const bottom = Math.min(viewport.height, bounds.bottom - viewport.top + gutter);
 	if (right - left < 1 || bottom - top < 1) return;
 	report({ left, top, width: right - left, height: bottom - top, explicit: Boolean(explicitFrame) });
+}
+
+/**
+ * Applies simulated screen technology only within the inner reading iframe.
+ * The outer mockup remains authored hardware, while pagination retains the
+ * same DOM and scroll position because this layer changes paint, not content.
+ */
+function applyPreviewDisplay(
+	document: Document,
+	category: DisplayCategory,
+	settings: Pick<PreviewContentSettings, 'displayTheme' | 'brightness' | 'warmth' | 'einkRenderMode' | 'colorSoftTone' | 'publisherFontSettings'>,
+): void {
+	const styleId = 'book-designer-display-profile';
+	const style = document.getElementById(styleId) ?? document.head.appendChild(document.createElement('style'));
+	style.id = styleId;
+	const isEInk = category === 'eink';
+	const theme = settings.displayTheme === 'dark' ? 'dark' : isEInk ? 'light' : settings.displayTheme;
+	// E-ink is reflective rather than emissive: zero front-light still leaves a
+	// readable matte surface, while 100% is the brightest simulated substrate.
+	const brightness = isEInk ? 0.7 + settings.brightness / 100 * 0.3 : 0.3 + settings.brightness / 100 * 0.7;
+	const warmth = settings.warmth / 100;
+	const isColorSoft = isEInk && settings.einkRenderMode === 'colorsoft';
+	const isMonochromeEInk = isEInk && !isColorSoft;
+	syncMonochromeEInkFilter(document, isMonochromeEInk);
+	const colors = isEInk
+		? theme === 'dark'
+			? { paper: isColorSoft ? '#272a2a' : '#252523', ink: isColorSoft ? '#e4e7e4' : '#d7d7d2', accent: isColorSoft ? '#c7d1b4' : '#d7d7d2' }
+			: { paper: isColorSoft ? '#dadfe1' : '#e3e5e2', ink: isColorSoft ? '#222222' : '#1a1a1a', accent: isColorSoft ? '#2e7d32' : '#1a1a1a' }
+		: theme === 'dark'
+			? { paper: '#171719', ink: '#f4f2ed', accent: '#9ecaff' }
+			: theme === 'sepia'
+				? { paper: '#f0e4ca', ink: '#4a3824', accent: '#845b2a' }
+				: theme === 'mint'
+					? { paper: '#e7f2ec', ink: '#193b31', accent: '#256b57' }
+					: { paper: '#fbfaf7', ink: '#242322', accent: '#315e88' };
+	// Publisher colors can survive only on a light, color-capable display. A
+	// monochrome panel must map every ink color to one pigment, and non-light
+	// themes deliberately own contrast for legibility.
+	const preservesPublisherColor = settings.publisherFontSettings
+		&& theme === 'light'
+		&& (!isEInk || isColorSoft);
+	const forcedInk = preservesPublisherColor ? '' : `.book,.book *{color:${colors.ink}!important}.book blockquote{border-color:${colors.accent}!important}`;
+	const readerTypography = settings.publisherFontSettings
+		? ''
+		: `body{font-family:${isEInk ? 'Georgia,serif' : 'system-ui,sans-serif'}!important}.book p,.book li,.book blockquote{text-align:start!important}`;
+	const imageTreatment = isEInk && !isColorSoft
+			? '.book img{filter:grayscale(1) contrast(1.12)!important}'
+			: '';
+	const eInkTexture = isEInk
+		? `body::before{content:"";position:fixed;inset:0;z-index:2147483645;pointer-events:none;opacity:${isColorSoft ? 0.045 : 0.105};background-image:radial-gradient(circle at 1px 1px,rgb(0 0 0 / .46) .36px,transparent .54px),radial-gradient(circle at 3px 2px,rgb(255 255 255 / .3) .3px,transparent .48px);background-size:${isColorSoft ? '4px 4px,5px 5px' : '3px 3px,4px 4px'};mix-blend-mode:${theme === 'dark' ? 'screen' : 'multiply'}}`
+		: '';
+	const displayPaint = isMonochromeEInk
+		? `body{filter:url(#book-designer-eink-16-levels) contrast(.92) brightness(${(brightness * 0.98).toFixed(3)});-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}.book,.book *{text-shadow:0 .3px .5px rgb(26 26 26 / .15);font-synthesis:none}`
+		: isColorSoft
+			? `body{filter:saturate(${settings.colorSoftTone === 'vivid' ? '.68' : '.38'}) contrast(${settings.colorSoftTone === 'vivid' ? '1.02' : '.85'}) brightness(${(brightness * (settings.colorSoftTone === 'vivid' ? 0.97 : 0.95)).toFixed(3)});-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}.book,.book *{text-shadow:0 .5px .8px rgb(34 34 34 / .25);font-synthesis:none}`
+			: `body{filter:brightness(${brightness.toFixed(3)})}`;
+	style.textContent = `html,body{background:${colors.paper}!important}body{color:${colors.ink};isolation:isolate}${displayPaint}body::after{content:"";position:fixed;inset:0;z-index:2147483646;pointer-events:none;background:rgb(255 174 72 / ${warmth.toFixed(3)});mix-blend-mode:multiply}.book{background:transparent!important}.book a,.chapter-number,.scene-break{color:${colors.accent}}${forcedInk}${readerTypography}${imageTreatment}${eInkTexture}`;
+}
+
+/** A browser-native 16-step pigment quantizer; it changes paint only, never layout. */
+function syncMonochromeEInkFilter(document: Document, enabled: boolean): void {
+	const id = 'book-designer-eink-filter-definitions';
+	const existing = document.getElementById(id);
+	if (!enabled) {
+		existing?.remove();
+		return;
+	}
+	if (existing) return;
+	const namespace = 'http://www.w3.org/2000/svg';
+	const svg = document.createElementNS(namespace, 'svg');
+	svg.id = id;
+	svg.setAttribute('aria-hidden', 'true');
+	svg.setAttribute('width', '0');
+	svg.setAttribute('height', '0');
+	svg.style.cssText = 'position:fixed;inline-size:0;block-size:0;overflow:hidden;pointer-events:none';
+	const filter = document.createElementNS(namespace, 'filter');
+	filter.id = 'book-designer-eink-16-levels';
+	filter.setAttribute('color-interpolation-filters', 'sRGB');
+	const grayscale = document.createElementNS(namespace, 'feColorMatrix');
+	grayscale.setAttribute('type', 'matrix');
+	grayscale.setAttribute('values', '0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 1 0');
+	filter.append(grayscale);
+	const transfer = document.createElementNS(namespace, 'feComponentTransfer');
+	const levels = Array.from({ length: 16 }, (_, index) => (index / 15).toFixed(4)).join(' ');
+	for (const channel of ['R', 'G', 'B']) {
+		const component = document.createElementNS(namespace, `feFunc${channel}`);
+		component.setAttribute('type', 'discrete');
+		component.setAttribute('tableValues', levels);
+		transfer.append(component);
+	}
+	filter.append(transfer);
+	svg.append(filter);
+	document.body.prepend(svg);
 }
 
 function applyPreviewLayout(
