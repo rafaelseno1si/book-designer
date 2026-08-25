@@ -51,6 +51,9 @@ export interface BookProjectPreviewState {
 	einkRenderMode: EInkRenderMode;
 	colorSoftTone: ColorSoftTone;
 	publisherFontSettings: boolean;
+	printColorMode: PrintColorMode;
+	printPaginationMode: PrintPaginationMode;
+	printFacingPages: boolean;
 	deviceContentSettings: Record<string, PreviewContentSettings>;
 	deviceScale: number;
 	autoDeviceScale: boolean;
@@ -79,6 +82,10 @@ export interface PreviewContentSettings {
 	einkRenderMode: EInkRenderMode;
 	colorSoftTone: ColorSoftTone;
 	publisherFontSettings: boolean;
+	/** Print-only controls, also stored per device target. */
+	printColorMode: PrintColorMode;
+	printPaginationMode: PrintPaginationMode;
+	printFacingPages: boolean;
 }
 export const DISPLAY_THEMES = ['light', 'dark', 'sepia', 'mint'] as const;
 export type DisplayTheme = (typeof DISPLAY_THEMES)[number];
@@ -86,6 +93,10 @@ export const EINK_RENDER_MODES = ['monochrome', 'colorsoft'] as const;
 export type EInkRenderMode = (typeof EINK_RENDER_MODES)[number];
 export const COLORSOFT_TONES = ['standard', 'vivid'] as const;
 export type ColorSoftTone = (typeof COLORSOFT_TONES)[number];
+export const PRINT_COLOR_MODES = ['color', 'black-white'] as const;
+export type PrintColorMode = (typeof PRINT_COLOR_MODES)[number];
+export const PRINT_PAGINATION_MODES = ['fast', 'complete'] as const;
+export type PrintPaginationMode = (typeof PRINT_PAGINATION_MODES)[number];
 export const PREVIEW_MODES = ['continuous', 'paged'] as const;
 export type PreviewMode = (typeof PREVIEW_MODES)[number];
 export const PREVIEW_ORIENTATIONS = ['portrait', 'landscape'] as const;
@@ -219,7 +230,8 @@ export class BookProjectStore {
 			const targetKey = previewContentKey(next);
 			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined || preview.frameColor !== undefined
 				|| preview.displayTheme !== undefined || preview.brightness !== undefined || preview.warmth !== undefined
-				|| preview.einkRenderMode !== undefined || preview.colorSoftTone !== undefined || preview.publisherFontSettings !== undefined;
+				|| preview.einkRenderMode !== undefined || preview.colorSoftTone !== undefined || preview.publisherFontSettings !== undefined
+				|| preview.printColorMode !== undefined || preview.printPaginationMode !== undefined || preview.printFacingPages !== undefined;
 			const target = hasContentChange
 				? normalizeContentSettings({ ...contentSettingsFromPreview(next), ...preview })
 				: settings[targetKey] ?? defaultPreviewContentSettings(next.deviceId);
@@ -342,7 +354,7 @@ function normalizeProject(value: unknown, defaultDevice: PreviewDeviceId): BookP
 		themeId: isThemeId(themeId) ? themeId : 'classic', typographyScale: isTypographyScale(typographyScale) ? typographyScale : 'comfortable', chapterStyleId: isChapterStyleId(chapterStyleId) ? chapterStyleId : 'quiet', sceneBreakId: isSceneBreakId(sceneBreakId) ? sceneBreakId : 'space',
 	}, preview: normalizePreviewState(preview, defaultDevice) }];
 }
-function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet', 'custom', 'kindle-paperwhite', MOTOROLA_RAZR_ID, 'imported'].includes(value); }
+function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet', 'custom', 'kindle-paperwhite', MOTOROLA_RAZR_ID, 'print', 'imported'].includes(value); }
 function isPreviewMode(value: unknown): value is PreviewMode { return value === 'continuous' || value === 'paged'; }
 function isPreviewOrientation(value: unknown): value is PreviewOrientation { return value === 'portrait' || value === 'landscape'; }
 function validScale(value: unknown): number { return typeof value === 'number' && Number.isFinite(value) && value >= 85 && value <= 800 ? value : 100; }
@@ -358,6 +370,9 @@ const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = {
 	einkRenderMode: 'monochrome',
 	colorSoftTone: 'standard',
 	publisherFontSettings: true,
+	printColorMode: 'color',
+	printPaginationMode: 'fast',
+	printFacingPages: false,
 };
 function defaultPreviewContentSettings(deviceId: PreviewDeviceId): PreviewContentSettings {
 	return deviceId === MOTOROLA_RAZR_ID ? { ...DEFAULT_PREVIEW_CONTENT_SETTINGS, frameColor: MOTOROLA_RAZR_MOCKUP.defaultFrameColor } : { ...DEFAULT_PREVIEW_CONTENT_SETTINGS };
@@ -374,6 +389,9 @@ function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, keyof
 		einkRenderMode: preview.einkRenderMode,
 		colorSoftTone: preview.colorSoftTone,
 		publisherFontSettings: preview.publisherFontSettings,
+		printColorMode: preview.printColorMode,
+		printPaginationMode: preview.printPaginationMode,
+		printFacingPages: preview.printFacingPages,
 	};
 }
 function normalizeContentSettings(value: Record<string, unknown> | PreviewContentSettings): PreviewContentSettings {
@@ -388,11 +406,16 @@ function normalizeContentSettings(value: Record<string, unknown> | PreviewConten
 		einkRenderMode: isEInkRenderMode(value.einkRenderMode) ? value.einkRenderMode : 'monochrome',
 		colorSoftTone: isColorSoftTone(value.colorSoftTone) ? value.colorSoftTone : 'standard',
 		publisherFontSettings: typeof value.publisherFontSettings === 'boolean' ? value.publisherFontSettings : true,
+		printColorMode: isPrintColorMode(value.printColorMode) ? value.printColorMode : 'color',
+		printPaginationMode: isPrintPaginationMode(value.printPaginationMode) ? value.printPaginationMode : 'fast',
+		printFacingPages: typeof value.printFacingPages === 'boolean' ? value.printFacingPages : false,
 	};
 }
 function isDisplayTheme(value: unknown): value is DisplayTheme { return typeof value === 'string' && DISPLAY_THEMES.includes(value as DisplayTheme); }
 function isEInkRenderMode(value: unknown): value is EInkRenderMode { return typeof value === 'string' && EINK_RENDER_MODES.includes(value as EInkRenderMode); }
 function isColorSoftTone(value: unknown): value is ColorSoftTone { return typeof value === 'string' && COLORSOFT_TONES.includes(value as ColorSoftTone); }
+function isPrintColorMode(value: unknown): value is PrintColorMode { return typeof value === 'string' && PRINT_COLOR_MODES.includes(value as PrintColorMode); }
+function isPrintPaginationMode(value: unknown): value is PrintPaginationMode { return typeof value === 'string' && PRINT_PAGINATION_MODES.includes(value as PrintPaginationMode); }
 function validPercentage(value: unknown, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : fallback; }
 function validFrameColor(value: unknown): string { return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_PREVIEW_CONTENT_SETTINGS.frameColor; }
 function previewContentKey(preview: Pick<BookProjectPreviewState, 'deviceId' | 'importedMockupId'>): string {
@@ -409,7 +432,7 @@ function validPageIndex(value: unknown): number { return typeof value === 'numbe
 function defaultPreviewState(deviceId: PreviewDeviceId): BookProjectPreviewState {
 	const resolvedDeviceId = deviceId === 'imported' ? 'ereader-6' : deviceId;
 	const content = defaultPreviewContentSettings(resolvedDeviceId);
-	return { deviceId: resolvedDeviceId, ...content, deviceContentSettings: { [previewContentKey({ deviceId: resolvedDeviceId, importedMockupId: null })]: content }, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mockupPostures: {}, mode: deviceId === 'ereader-6' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+	return { deviceId: resolvedDeviceId, ...content, deviceContentSettings: { [previewContentKey({ deviceId: resolvedDeviceId, importedMockupId: null })]: content }, deviceScale: 100, autoDeviceScale: true, customDeviceWidth: 390, customDeviceHeight: 844, mockupId: 'plain', importedMockupId: null, mockupPostures: {}, mode: deviceId === 'ereader-6' || deviceId === 'print' ? 'paged' : 'continuous', orientation: 'portrait', pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
 function normalizePreviewState(value: Record<string, unknown>, defaultDevice: PreviewDeviceId): BookProjectPreviewState {
 	const deviceId = isPreviewDevice(value.deviceId) ? value.deviceId : defaultDevice;
@@ -429,7 +452,7 @@ function normalizePreviewState(value: Record<string, unknown>, defaultDevice: Pr
 		mockupId: isPreviewMockupId(value.mockupId) ? value.mockupId : 'plain',
 		importedMockupId,
 		mockupPostures: normalizeMockupPostures(value.mockupPostures),
-		mode: isPreviewMode(value.mode) ? value.mode : deviceId === 'ereader-6' ? 'paged' : 'continuous',
+		mode: isPreviewMode(value.mode) ? value.mode : deviceId === 'ereader-6' || deviceId === 'print' ? 'paged' : 'continuous',
 		orientation: isPreviewOrientation(value.orientation) ? value.orientation : 'portrait',
 		pageIndex: validPageIndex(value.pageIndex),
 		activeSectionId: typeof value.activeSectionId === 'string' ? value.activeSectionId : null,

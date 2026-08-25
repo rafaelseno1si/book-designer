@@ -115,6 +115,16 @@ describe('BookProjectStore', () => {
 		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'motorola-razr', frameColor: '#686d73' });
 	});
 
+	it('persists independent print output and pagination controls', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		store.updatePreview({ deviceId: 'print', mode: 'paged', printColorMode: 'black-white', printPaginationMode: 'complete', printFacingPages: true });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'print', printColorMode: 'black-white', printPaginationMode: 'complete', printFacingPages: true });
+		store.updatePreview({ deviceId: 'phone', mockupId: 'plain' });
+		store.updatePreview({ deviceId: 'print', mockupId: 'plain' });
+		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ printColorMode: 'black-white', printPaginationMode: 'complete', printFacingPages: true });
+	});
+
 	it('persists an imported mockup posture separately from the shared mockup library', () => {
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');

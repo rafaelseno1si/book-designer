@@ -560,6 +560,14 @@
 	line-height: 1.45;
 }
 
+.book-preview-print-settings-hint {
+	margin: 12px 0 0;
+	color: var(--text-muted);
+	font-size: 0.75rem;
+	line-height: 1.35;
+	text-transform: none;
+}
+
 .book-preview-orientation-button:hover {
 	background: var(--background-modifier-hover);
 }
@@ -662,6 +670,26 @@
 	padding: 0;
 	border: 0;
 	background: transparent;
+}
+
+/* Print is a document canvas, not a physical reader frame. Its inner iframe
+ * draws the separated paper sheets and their recto/verso labels. */
+.book-preview-device[data-device='print'] {
+	display: block;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	overflow: hidden;
+}
+
+.book-preview-device[data-device='print'] .book-preview-screen {
+	background: transparent;
+	box-shadow: none;
+}
+
+.book-preview-device[data-device='print'] .book-preview-frame {
+	background: transparent;
+	box-shadow: none;
 }
 
 .book-preview-device[data-device='imported'] .book-preview-screen,

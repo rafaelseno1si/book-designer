@@ -29,7 +29,9 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const [marginGuide, setMarginGuide] = useState<'side' | 'vertical' | null>(null);
 	const [mockupDialog, setMockupDialog] = useState<{ editingId: string | null; name: string; error: string | null } | null>(null);
 	const [importedViewportBounds, setImportedViewportBounds] = useState<MockupViewportBounds | null>(null);
+	const [printCanvasColor, setPrintCanvasColor] = useState('rgb(32, 32, 32)');
 	const preview = project?.preview;
+	const isPrintPreview = preview?.deviceId === 'print';
 	const mockup = previewMockup(preview?.deviceId === 'kindle-paperwhite' ? 'kindle-paperwhite' : preview?.mockupId ?? 'plain');
 	const canvasRef = useRef<HTMLElement>(null);
 	const deviceRef = useRef<HTMLElement>(null);
@@ -47,11 +49,14 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		: null;
 	const activePostureDefinition = mockupPostures.find((posture) => posture.id === activeMockupPosture) ?? null;
 	const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-	const nativeDeviceDimensions = preview?.deviceId === 'custom'
+	const baseNativeDeviceDimensions = preview?.deviceId === 'custom'
 		? { width: preview.customDeviceWidth, height: preview.customDeviceHeight }
 		: selectedHtmlMockup
 			? { width: selectedHtmlMockup.width, height: selectedHtmlMockup.height }
 			: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
+	const nativeDeviceDimensions = isPrintPreview && preview?.printFacingPages
+		? { width: baseNativeDeviceDimensions.width * 2 + 28, height: baseNativeDeviceDimensions.height }
+		: baseNativeDeviceDimensions;
 	// Foldable mockups declare their final visual frame for every posture. This
 	// allows posture switches to go straight to the finished geometry without
 	// measuring a transitioning iframe or guessing a device's footprint.
@@ -123,6 +128,19 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		updateSize();
 		const observer = new ResizeObserver(updateSize);
 		observer.observe(canvas);
+		return () => observer.disconnect();
+	}, []);
+	useEffect(() => {
+		const updatePrintCanvasColor = () => {
+			const canvas = canvasRef.current;
+			if (!canvas) return;
+			const color = window.getComputedStyle(canvas).backgroundColor;
+			if (color) setPrintCanvasColor(color);
+		};
+		updatePrintCanvasColor();
+		const observer = new MutationObserver(updatePrintCanvasColor);
+		observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+		observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
 		return () => observer.disconnect();
 	}, []);
 	useEffect(() => {
@@ -204,11 +222,17 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 					{snapshot.registry.mockups.length > 0 && <optgroup label="Imported mockups">{snapshot.registry.mockups.map((candidate) => <option key={candidate.id} value={`imported:${candidate.id}`}>{candidate.name}</option>)}</optgroup>}
 				</select></label>
 				<label className="book-preview-mode-control"><span>Mode</span><select value={preview.mode} onChange={(event) => projectStore.updatePreview({ mode: event.currentTarget.value as PreviewMode, pageIndex: 0 })}><option value="continuous">Scroll</option><option value="paged">Paged</option></select></label>
-				<button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview({ orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>
+				{!isPrintPreview && <button type="button" className="book-preview-orientation-button" onClick={() => projectStore.updatePreview({ orientation: preview.orientation === 'portrait' ? 'landscape' : 'portrait', pageIndex: 0 })} title={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`} aria-label={`Switch to ${preview.orientation === 'portrait' ? 'landscape' : 'portrait'} orientation`}>↻</button>}
 				{mockupPostures.length > 1 && <button type="button" className="book-preview-posture-button" onClick={cycleMockupPosture} title={`Switch posture: ${mockupPostures.find((posture) => posture.id === activeMockupPosture)?.label ?? activeMockupPosture}`} aria-label={`Switch posture: ${mockupPostures.find((posture) => posture.id === activeMockupPosture)?.label ?? activeMockupPosture}`}>⤢</button>}
 				<div ref={settingsRef} className="book-preview-settings">
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => { if (open) setMarginGuide(null); return !open; })} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
+						{isPrintPreview ? <>
+							<label className="book-preview-settings-range"><span>Output</span><select value={preview.printColorMode} onChange={(event) => projectStore.updatePreview({ printColorMode: event.currentTarget.value as 'color' | 'black-white', pageIndex: 0 })}><option value="color">Color</option><option value="black-white">Black &amp; white</option></select></label>
+							<label className="book-preview-settings-range"><span>Pagination</span><select value={preview.printPaginationMode} onChange={(event) => projectStore.updatePreview({ printPaginationMode: event.currentTarget.value as 'fast' | 'complete', pageIndex: 0 })}><option value="fast">Fast · first 6 pages</option><option value="complete">Complete · whole book</option></select></label>
+							<label className="book-preview-settings-range"><span>Page view</span><select value={preview.printFacingPages ? 'facing' : 'single'} onChange={(event) => projectStore.updatePreview({ printFacingPages: event.currentTarget.value === 'facing', pageIndex: 0 })}><option value="single">Single page</option><option value="facing">Facing pages</option></select></label>
+							<p className="book-preview-print-settings-hint">Page size, margins, typography, bleed, and print marks will be configured in Book Designer.</p>
+						</> : <>
 						{isEInk
 							? <><label className="book-preview-settings-range"><span>Render mode</span><select value={preview.einkRenderMode} onChange={(event) => projectStore.updatePreview({ einkRenderMode: event.currentTarget.value as 'monochrome' | 'colorsoft' })}><option value="monochrome">Monochrome</option><option value="colorsoft">Colorsoft</option></select></label><label className="book-preview-settings-range"><span>Theme mode</span><select value={preview.displayTheme === 'dark' ? 'dark' : 'light'} onChange={(event) => projectStore.updatePreview({ displayTheme: event.currentTarget.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>{isColorSoft && <label className="book-preview-settings-range"><span>Color mode</span><select value={preview.colorSoftTone} onChange={(event) => projectStore.updatePreview({ colorSoftTone: event.currentTarget.value as 'standard' | 'vivid' })}><option value="standard">Standard</option><option value="vivid">Vivid</option></select></label>}</>
 							: <label className="book-preview-settings-range"><span>Theme mode</span><select value={preview.displayTheme} onChange={(event) => projectStore.updatePreview({ displayTheme: event.currentTarget.value as 'light' | 'dark' | 'sepia' | 'mint' })}><option value="light">Light</option><option value="dark">Dark</option><option value="sepia">Sepia</option><option value="mint">Mint</option></select></label>}
@@ -226,6 +250,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 							<button type="button" className="is-danger" onClick={() => projectStore.deleteImportedMockup(selectedImportedMockup.id)}>Delete mockup</button>
 						</div>}
 						{preview.deviceId === 'custom' && <p className="book-preview-custom-size-hint">Drag the lower-right corner to resize<br />{preview.customDeviceWidth} × {preview.customDeviceHeight}</p>}
+						</>}
 					</div>}
 				</div>
 			</div>}
@@ -236,14 +261,14 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} displayCategory={displayCategory} displaySettings={preview!} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} displayCategory={displayCategory} displaySettings={preview!} isPrint={isPrintPreview} printColorMode={preview!.printColorMode} printPaginationMode={preview!.printPaginationMode} printFacingPages={preview!.printFacingPages} printCanvasColor={printCanvasColor} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
 			{preview?.mode === 'paged' && <>
-				<button type="button" className="book-preview-page-turn is-previous" onClick={() => projectStore.updatePreview({ pageIndex: Math.max(0, preview.pageIndex - 1) })} disabled={preview.pageIndex === 0} aria-label="Previous page">‹</button>
-				<span className="book-preview-page-indicator" aria-live="polite">{Math.min(preview.pageIndex + 1, pageCount)} / {pageCount}</span>
-				<button type="button" className="book-preview-page-turn is-next" onClick={() => projectStore.updatePreview({ pageIndex: Math.min(pageCount - 1, preview.pageIndex + 1) })} disabled={preview.pageIndex >= pageCount - 1} aria-label="Next page">›</button>
+				<button type="button" className="book-preview-page-turn is-previous" onClick={() => projectStore.updatePreview({ pageIndex: Math.max(0, preview.pageIndex - (isPrintPreview && preview.printFacingPages ? 2 : 1)) })} disabled={preview.pageIndex === 0} aria-label="Previous page">‹</button>
+				<span className="book-preview-page-indicator" aria-live="polite">{isPrintPreview ? `${preview.printFacingPages ? `${Math.min(preview.pageIndex + 1, pageCount)}–${Math.min(preview.pageIndex + 2, pageCount)}` : Math.min(preview.pageIndex + 1, pageCount)} / ${pageCount} · ${preview.printFacingPages ? 'verso / recto' : preview.pageIndex % 2 === 0 ? 'recto · right' : 'verso · left'}` : `${Math.min(preview.pageIndex + 1, pageCount)} / ${pageCount}`}</span>
+				<button type="button" className="book-preview-page-turn is-next" onClick={() => projectStore.updatePreview({ pageIndex: Math.min(isPrintPreview && preview.printFacingPages ? pageCount - (pageCount % 2 === 0 ? 2 : 1) : pageCount - 1, preview.pageIndex + (isPrintPreview && preview.printFacingPages ? 2 : 1)) })} disabled={preview.pageIndex >= (isPrintPreview && preview.printFacingPages ? pageCount - (pageCount % 2 === 0 ? 2 : 1) : pageCount - 1)} aria-label="Next page">›</button>
 			</>}
 		</div><button type="button" className="book-preview-toolbar-toggle" onClick={() => { setToolbarCollapsed(!toolbarCollapsed); if (!toolbarCollapsed) setSettingsOpen(false); }} title={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'} aria-label={toolbarCollapsed ? 'Show toolbar' : 'Hide toolbar'}>{toolbarCollapsed ? '⌄' : '⌃'}</button></main>
 		{mockupDialog && <MockupImportDialog dialog={mockupDialog} fileInputRef={mockupDialogFileRef} onClose={() => setMockupDialog(null)} onCopyInstructions={() => { void copyMockupInstructions(); }} onNameChange={(name) => setMockupDialog({ ...mockupDialog, name, error: null })} onChooseFile={() => mockupDialogFileRef.current?.click()} onFile={(file) => { if (file) void importMockupFile(file); }} />}
@@ -319,6 +344,11 @@ function BookPreviewFrame({
 	hasDeclaredPostureFrame,
 	displayCategory,
 	displaySettings,
+	isPrint,
+	printColorMode,
+	printPaginationMode,
+	printFacingPages,
+	printCanvasColor,
 	mockupNativeSize,
 	mockupViewportBounds,
 	orientation,
@@ -341,6 +371,11 @@ function BookPreviewFrame({
 	hasDeclaredPostureFrame: boolean;
 	displayCategory: DisplayCategory;
 	displaySettings: Pick<PreviewContentSettings, 'displayTheme' | 'brightness' | 'warmth' | 'einkRenderMode' | 'colorSoftTone' | 'publisherFontSettings'>;
+	isPrint: boolean;
+	printColorMode: 'color' | 'black-white';
+	printPaginationMode: 'fast' | 'complete';
+	printFacingPages: boolean;
+	printCanvasColor: string;
 	mockupNativeSize: { width: number; height: number } | null;
 	mockupViewportBounds: MockupViewportBounds | null;
 	orientation: 'portrait' | 'landscape';
@@ -373,6 +408,7 @@ function BookPreviewFrame({
 	const virtualizer = useRef<ContinuousBookVirtualizer | null>(null);
 	const pagedVirtualizer = useRef<PagedBookVirtualizer | null>(null);
 	const modeRef = useRef(mode);
+	const isPrintRef = useRef(isPrint);
 	const pageIndexRef = useRef(pageIndex);
 	const materializedMode = useRef<PreviewMode | null>(null);
 	const pagedViewportHeight = useRef(0);
@@ -392,6 +428,7 @@ function BookPreviewFrame({
 		if (postureTransitionTimer.current !== null) window.clearTimeout(postureTransitionTimer.current);
 	}, []);
 	useEffect(() => { modeRef.current = mode; }, [mode]);
+	useEffect(() => { isPrintRef.current = isPrint; }, [isPrint]);
 	useEffect(() => { pageIndexRef.current = pageIndex; }, [pageIndex]);
 	useEffect(() => { onMockupViewportBoundsChangeRef.current = onMockupViewportBoundsChange; }, [onMockupViewportBoundsChange]);
 	useEffect(() => {
@@ -404,15 +441,15 @@ function BookPreviewFrame({
 		pagedVirtualizer.current = null;
 		materializedMode.current = null;
 		patchPreviewDocument(document, html);
-		applyPreviewDisplay(document, displayCategory, displaySettings);
+		applyPreviewDisplay(document, displayCategory, displaySettings, isPrint, printColorMode, printCanvasColor);
 		renderedHtml.current = html;
 		applyLayout();
 	}, [html]);
 	useEffect(() => {
 		const document = frameRef.current?.contentDocument;
 		if (!loaded.current || !document) return;
-		applyPreviewDisplay(document, displayCategory, displaySettings);
-	}, [displayCategory, displaySettings.displayTheme, displaySettings.brightness, displaySettings.warmth, displaySettings.einkRenderMode, displaySettings.colorSoftTone, displaySettings.publisherFontSettings]);
+		applyPreviewDisplay(document, displayCategory, displaySettings, isPrint, printColorMode, printCanvasColor);
+	}, [displayCategory, displaySettings.displayTheme, displaySettings.brightness, displaySettings.warmth, displaySettings.einkRenderMode, displaySettings.colorSoftTone, displaySettings.publisherFontSettings, isPrint, printColorMode, printCanvasColor]);
 	useEffect(() => { if (loaded.current) applyLayout(); }, [mode, pageIndex, marginGuide]);
 	useEffect(() => {
 		if (!loaded.current) return;
@@ -429,6 +466,13 @@ function BookPreviewFrame({
 		pagedViewportHeight.current = 0;
 		applyLayout();
 	}, [orientation]);
+	useEffect(() => {
+		if (!loaded.current || !isPrint) return;
+		materializedMode.current = null;
+		pagedPagesCreated.current = false;
+		pagedViewportHeight.current = 0;
+		applyLayout();
+	}, [isPrint, printPaginationMode, printFacingPages, printCanvasColor, mode]);
 	useEffect(() => { applyImportedFrameColor(shellRef.current?.contentDocument ?? null, frameColor, mockupColor); }, [frameColor, mockupColor]);
 	useLayoutEffect(() => {
 		const shellDocument = shellRef.current?.contentDocument;
@@ -460,8 +504,10 @@ function BookPreviewFrame({
 		if (!frame || !document) return;
 		const activeMode = modeRef.current;
 		const activePageIndex = pageIndexRef.current;
+		const usesPrintPages = isPrint;
+		const usesPagedPages = activeMode === 'paged' || usesPrintPages;
 		const mustRematerialize = materializedMode.current !== activeMode
-			|| activeMode === 'paged' && Math.abs(pagedViewportHeight.current - frame.clientHeight) > 1;
+			|| usesPagedPages && Math.abs(pagedViewportHeight.current - frame.clientHeight) > 1;
 		if (mustRematerialize) {
 			virtualizer.current?.dispose();
 			virtualizer.current = null;
@@ -470,10 +516,10 @@ function BookPreviewFrame({
 			restoreBookSource(document, renderedHtml.current);
 			materializedMode.current = activeMode;
 			pagedPagesCreated.current = false;
-			if (activeMode === 'paged') pagedViewportHeight.current = frame.clientHeight;
+			if (usesPagedPages) pagedViewportHeight.current = frame.clientHeight;
 		}
-		applyPreviewLayout(document, activeMode, contentWidth, contentHeight, marginGuide);
-		if (activeMode === 'continuous') {
+		applyPreviewLayout(document, activeMode, contentWidth, contentHeight, marginGuide, isPrint, printFacingPages, printCanvasColor);
+		if (!usesPagedPages) {
 			if (!virtualizer.current) virtualizer.current = ContinuousBookVirtualizer.create(document, Math.max(360, frame.clientHeight));
 			virtualizer.current?.update(latestScrollTop.current, frame.clientHeight);
 			document.defaultView?.scrollTo({ top: latestScrollTop.current });
@@ -484,20 +530,30 @@ function BookPreviewFrame({
 			if (pageLayoutFrame.current !== null) window.cancelAnimationFrame(pageLayoutFrame.current);
 			pageLayoutFrame.current = window.requestAnimationFrame(() => {
 				pageLayoutFrame.current = null;
-				if (loaded.current && modeRef.current === 'paged') applyLayout(true);
+				if (loaded.current && (modeRef.current === 'paged' || isPrint)) applyLayout(true);
 			});
 			return;
 		}
 		if (!pagedPagesCreated.current) {
 			restoreBookSections(document);
-			createPagedPages(document);
+			createPagedPages(document, isPrint && printPaginationMode === 'fast' ? 6 : Number.POSITIVE_INFINITY);
 			pagedPagesCreated.current = true;
 			pagedVirtualizer.current = PagedBookVirtualizer.create(document);
 		}
 		const count = Math.max(1, pagedVirtualizer.current?.count ?? 0);
 		onPageCountChange(count);
-		const clampedPageIndex = Math.min(activePageIndex, count - 1);
+		const maximumPageIndex = isPrint && printFacingPages
+			? Math.max(0, count - (count % 2 === 0 ? 2 : 1))
+			: count - 1;
+		const clampedPageIndex = isPrint && printFacingPages
+			? Math.min(Math.max(0, Math.floor(activePageIndex / 2) * 2), maximumPageIndex)
+			: Math.min(activePageIndex, maximumPageIndex);
 		if (activePageIndex !== clampedPageIndex) onPageIndexChange(clampedPageIndex);
+		if (activeMode === 'continuous') {
+			pagedVirtualizer.current?.update(document.defaultView?.scrollY ?? latestScrollTop.current);
+			document.defaultView?.scrollTo({ top: latestScrollTop.current, behavior: 'auto' });
+			return;
+		}
 		pagedVirtualizer.current?.scrollToIndex(clampedPageIndex);
 		pagedVirtualizer.current?.update(document.defaultView?.scrollY ?? 0);
 	};
@@ -526,7 +582,7 @@ function BookPreviewFrame({
 		frameCleanup.current?.();
 		loaded.current = true;
 		renderedHtml.current = html;
-		applyPreviewDisplay(frame.contentDocument, displayCategory, displaySettings);
+		applyPreviewDisplay(frame.contentDocument, displayCategory, displaySettings, isPrint, printColorMode, printCanvasColor);
 		applyLayout();
 		resizeObserver.current?.disconnect();
 		const invalidateForResize = () => {
@@ -540,8 +596,8 @@ function BookPreviewFrame({
 		resizeObserver.current.observe(frame);
 		const handleScroll = () => {
 			latestScrollTop.current = frameWindow.scrollY;
-			if (modeRef.current === 'continuous') virtualizer.current?.update(frameWindow.scrollY, frame.clientHeight);
-			if (modeRef.current === 'paged') pagedVirtualizer.current?.update(frameWindow.scrollY);
+			if (modeRef.current === 'continuous' && !isPrintRef.current) virtualizer.current?.update(frameWindow.scrollY, frame.clientHeight);
+			if (modeRef.current === 'paged' || isPrintRef.current) pagedVirtualizer.current?.update(frameWindow.scrollY);
 			if (scrollTimer.current !== null) return;
 			scrollTimer.current = window.setTimeout(() => {
 				scrollTimer.current = null;
@@ -732,10 +788,23 @@ function applyPreviewDisplay(
 	document: Document,
 	category: DisplayCategory,
 	settings: Pick<PreviewContentSettings, 'displayTheme' | 'brightness' | 'warmth' | 'einkRenderMode' | 'colorSoftTone' | 'publisherFontSettings'>,
+	isPrint: boolean,
+	printColorMode: 'color' | 'black-white',
+	printCanvasColor: string,
 ): void {
 	const styleId = 'book-designer-display-profile';
 	const style = document.getElementById(styleId) ?? document.head.appendChild(document.createElement('style'));
 	style.id = styleId;
+	if (isPrint) {
+		// Print pages deliberately inherit the preview canvas instead of painting a
+		// separate white sheet. The host's resolved canvas color cannot cross an
+		// iframe boundary, so it is passed in as a concrete color value.
+		const ink = contrastingInk(printCanvasColor);
+		style.textContent = printColorMode === 'black-white'
+			? `html,body{background:transparent!important;color:${ink}!important}body{filter:grayscale(1)!important}.book-page,.book-page *{color:#111!important}.book img{filter:grayscale(1) contrast(1.08)!important}`
+			: `html,body{background:transparent!important;color:${ink}!important}body{filter:none!important}.book-page{color:#171717!important}.book{background:transparent!important}`;
+		return;
+	}
 	const isEInk = category === 'eink';
 	const theme = settings.displayTheme === 'dark' ? 'dark' : isEInk ? 'light' : settings.displayTheme;
 	// E-ink is reflective rather than emissive: zero front-light still leaves a
@@ -780,6 +849,16 @@ function applyPreviewDisplay(
 	style.textContent = `html,body{background:${colors.paper}!important}body{color:${colors.ink};isolation:isolate}${displayPaint}body::after{content:"";position:fixed;inset:0;z-index:2147483646;pointer-events:none;background:rgb(255 174 72 / ${warmth.toFixed(3)});mix-blend-mode:multiply}.book{background:transparent!important}.book a,.chapter-number,.scene-break{color:${colors.accent}}${forcedInk}${readerTypography}${imageTreatment}${eInkTexture}`;
 }
 
+function contrastingInk(background: string): string {
+	const channels = background.match(/rgba?\(\s*([\d.]+)[,\s]+\s*([\d.]+)[,\s]+\s*([\d.]+)/i);
+	if (!channels) return '#e8e8e8';
+	const red = Number(channels[1]);
+	const green = Number(channels[2]);
+	const blue = Number(channels[3]);
+	const luminance = (red * 0.2126 + green * 0.7152 + blue * 0.0722) / 255;
+	return luminance > 0.52 ? '#1c1c1c' : '#e8e8e8';
+}
+
 /** A browser-native 16-step pigment quantizer; it changes paint only, never layout. */
 function syncMonochromeEInkFilter(document: Document, enabled: boolean): void {
 	const id = 'book-designer-eink-filter-definitions';
@@ -822,12 +901,25 @@ function applyPreviewLayout(
 	contentWidth: number,
 	contentHeight: number,
 	marginGuide: 'side' | 'vertical' | null,
+	isPrint = false,
+	printFacingPages = false,
+	printCanvasColor = 'rgb(32, 32, 32)',
 ): void {
 	const style = document.getElementById('book-designer-preview-layout');
 	// The style element belongs to the preview iframe's Window. A host-window
 	// instanceof HTMLStyleElement check is false across that realm, which used
 	// to skip the entire paged stylesheet and leave the document scrollable.
 	if (!style || style.tagName !== 'STYLE') return;
+	if (isPrint) {
+		const ink = contrastingInk(printCanvasColor);
+		const facingGrid = printFacingPages
+			? '.book{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense;gap:18px;padding:18px;align-items:start}.book-page-slot:nth-child(odd),.book-page:nth-child(odd){grid-column:2}.book-page-slot:nth-child(even),.book-page:nth-child(even){grid-column:1}'
+			: '.book{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;padding:18px;align-items:start}';
+		const scrolling = mode === 'continuous';
+		style.textContent = `html{width:100%;min-width:0;background:${printCanvasColor}!important;${scrolling ? 'height:auto;overflow:auto;scrollbar-width:thin' : 'height:100%;overflow:hidden;scroll-snap-type:y mandatory;scrollbar-width:none'}}html::-webkit-scrollbar{${scrolling ? 'width:8px' : 'display:none'}}body{width:100%;min-height:100%;margin:0!important;padding:0!important;background:${printCanvasColor}!important;color:${ink}!important;overflow:${scrolling ? 'visible' : 'hidden'}!important}.book{width:100%;max-width:none;margin:0!important;box-sizing:border-box}.book-page-slot,.book-page{box-sizing:border-box;position:relative;display:block;min-width:0;height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};min-height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};max-height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};margin:0!important;padding:8vh 9%;overflow:clip!important;background:#fff!important;box-shadow:0 2px 9px rgb(0 0 0 / .28);${scrolling ? '' : 'scroll-snap-align:start;scroll-snap-stop:always'}}.book-page-slot>.book-page{height:100%;min-height:100%;max-height:100%;padding:8vh 9%;box-shadow:none}.book-page::after{content:'Page ' attr(data-page-number) ' · ' attr(data-page-side);position:absolute;right:9%;bottom:3.6%;color:#777!important;font:500 10px/1 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}${facingGrid}`;
+		syncMarginGuide(document, null, 0, 0);
+		return;
+	}
 	const sideInset = (100 - contentWidth) / 2;
 	const blockInset = (100 - contentHeight) / 2;
 	style.textContent = mode === 'paged'
@@ -858,7 +950,7 @@ function syncMarginGuide(document: Document, type: 'side' | 'vertical' | null, s
 	if (!existing) document.body.append(guide);
 }
 
-function createPagedPages(document: Document): void {
+function createPagedPages(document: Document, maximumPages = Number.POSITIVE_INFINITY): void {
 	const book = document.querySelector<HTMLElement>('.book');
 	if (!book) return;
 	const chapters = Array.from(book.querySelectorAll<HTMLElement>(':scope > [data-section-id]'));
@@ -868,7 +960,10 @@ function createPagedPages(document: Document): void {
 		// A manuscript file is a chapter in the Book Model. Its opening should
 		// always begin on a fresh reader page, even when the prior chapter is
 		// short; this gives page navigation stable, meaningful targets.
-		if (chapterIndex > 0 && page.children.length > 0) page = appendPage(document, book, book.children.length);
+		if (chapterIndex > 0 && page.children.length > 0) {
+			if (book.children.length >= maximumPages) return;
+			page = appendPage(document, book, book.children.length);
+		}
 		let fragment = appendChapterFragment(document, page, chapter, true);
 		const remaining = Array.from(chapter.children) as HTMLElement[];
 		while (remaining.length > 0) {
@@ -882,6 +977,7 @@ function createPagedPages(document: Document): void {
 			// is split using its actual laid-out text position below.
 			if (fragment.children.length > 1) {
 				child.remove();
+				if (book.children.length >= maximumPages) return;
 				page = appendPage(document, book, book.children.length);
 				fragment = appendChapterFragment(document, page, chapter, false);
 				remaining.unshift(child);
@@ -890,6 +986,7 @@ function createPagedPages(document: Document): void {
 
 			const remainder = splitBlockAtPageBoundary(document, page, child);
 			if (remainder) {
+				if (book.children.length >= maximumPages) return;
 				page = appendPage(document, book, book.children.length);
 				fragment = appendChapterFragment(document, page, chapter, false);
 				remaining.unshift(remainder);
@@ -1005,6 +1102,8 @@ function appendPage(document: Document, book: HTMLElement, index: number): HTMLE
 	const page = document.createElement('div');
 	page.className = 'book-page';
 	page.dataset.pageIndex = String(index);
+	page.dataset.pageNumber = String(index + 1);
+	page.dataset.pageSide = index % 2 === 0 ? 'recto · right' : 'verso · left';
 	book.append(page);
 	return page;
 }

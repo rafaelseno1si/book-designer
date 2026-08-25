@@ -7,6 +7,7 @@ export const PREVIEW_DEVICE_IDS = [
 	'custom',
 	'kindle-paperwhite',
 	'motorola-razr',
+	'print',
 	'imported',
 ] as const;
 
@@ -31,6 +32,7 @@ export const PREVIEW_DEVICE_LABELS: Record<PreviewDeviceId, string> = {
 	custom: 'Custom size',
 	'kindle-paperwhite': 'Kindle Paperwhite',
 	'motorola-razr': 'Motorola Razr',
+	print: 'Print',
 	imported: 'Imported mockup',
 };
 
@@ -43,6 +45,7 @@ export const PREVIEW_DEVICE_DIMENSIONS: Record<PreviewDeviceId, { width: number;
 	custom: { width: 390, height: 844 },
 	'kindle-paperwhite': { width: 461, height: 638 },
 	'motorola-razr': { width: 1160, height: 1840 },
+	print: { width: 760, height: 980 },
 	imported: { width: 460, height: 700 },
 };
 
