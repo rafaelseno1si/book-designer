@@ -261,7 +261,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} displayCategory={displayCategory} displaySettings={preview!} isPrint={isPrintPreview} printColorMode={preview!.printColorMode} printPaginationMode={preview!.printPaginationMode} printFacingPages={preview!.printFacingPages} printCanvasColor={printCanvasColor} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}:${isPrintPreview ? 'print' : 'reader'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} displayCategory={displayCategory} displaySettings={preview!} isPrint={isPrintPreview} printColorMode={preview!.printColorMode} printPaginationMode={preview!.printPaginationMode} printFacingPages={preview!.printFacingPages} printCanvasColor={printCanvasColor} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
@@ -467,7 +467,12 @@ function BookPreviewFrame({
 		applyLayout();
 	}, [orientation]);
 	useEffect(() => {
-		if (!loaded.current || !isPrint) return;
+		if (!loaded.current) return;
+		// The preview iframe stays mounted across built-in device changes. Print
+		// pages are a different DOM materialization from reader pages, so reset in
+		// both directions (print → reader as well as reader → print). Otherwise a
+		// paged reader can keep print's generated .book-page nodes until another
+		// interaction happens to trigger a layout pass.
 		materializedMode.current = null;
 		pagedPagesCreated.current = false;
 		pagedViewportHeight.current = 0;
