@@ -138,6 +138,22 @@ export interface PreviewRenderState {
 	revision: number;
 }
 
+export type ProjectImportCollisionStrategy = 'reject' | 'replace' | 'copy';
+
+export class ProjectNameValidationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'ProjectNameValidationError';
+	}
+}
+
+export class ProjectIdConflictError extends Error {
+	constructor(readonly projectId: string) {
+		super(`A project with ID "${projectId}" already exists.`);
+		this.name = 'ProjectIdConflictError';
+	}
+}
+
 export const DEFAULT_PROJECT_METADATA: BookProjectMetadata = { title: '', author: '', language: 'english', publisher: '', isbn: '' };
 export const DEFAULT_PROJECT_DESIGN: BookProjectDesign = { themeId: 'classic', typographyScale: 'comfortable', chapterStyleId: 'quiet', sceneBreakId: 'space' };
 const EMPTY_RUNTIME: ProjectRuntime = { status: 'idle', book: null, renderedHtml: '', error: null };
@@ -146,18 +162,20 @@ export function emptyProjectRegistry(): BookProjectRegistry { return { version: 
 
 export function normalizeProjectRegistry(value: unknown, defaultDevice: PreviewDeviceId): BookProjectRegistry {
 	if (!isRecord(value) || !Array.isArray(value.projects)) return emptyProjectRegistry();
-	const projects = value.projects.flatMap((candidate) => normalizeProject(candidate, defaultDevice));
+	const rawProjects: unknown[] = value.projects;
+	const projects = rawProjects.flatMap((candidate) => normalizeProject(candidate, defaultDevice));
 	const mockups = normalizeImportedMockups(value.mockups);
 	// Phase 1 initially embedded a single imported mockup in each project. Pull
 	// those legacy entries into the shared library on the next save instead of
 	// losing users' existing device frames.
-	for (const candidate of value.projects) {
+	for (const candidate of rawProjects) {
 		if (!isRecord(candidate) || !isRecord(candidate.preview)) continue;
 		const legacyMockup = normalizeImportedMockup(candidate.preview.importedMockup);
 		if (legacyMockup && !mockups.some((mockup) => mockup.id === legacyMockup.id)) mockups.push(legacyMockup);
 	}
 	for (const project of projects) {
-		const legacyPreview = value.projects.find((candidate) => isRecord(candidate) && candidate.id === project.id && isRecord(candidate.preview))?.preview;
+		const legacyCandidate = rawProjects.find((candidate) => isRecord(candidate) && candidate.id === project.id && isRecord(candidate.preview));
+		const legacyPreview: unknown = isRecord(legacyCandidate) ? legacyCandidate.preview : undefined;
 		const legacyId = isRecord(legacyPreview) ? normalizeImportedMockup(legacyPreview.importedMockup)?.id : null;
 		if (project.preview.deviceId === 'imported' && !project.preview.importedMockupId && legacyId) project.preview.importedMockupId = legacyId;
 		if (project.preview.deviceId === 'imported' && !mockups.some((mockup) => mockup.id === project.preview.importedMockupId)) {
@@ -191,9 +209,9 @@ export class BookProjectStore {
 	subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
 	createProject(folderPath: string, folderName: string): BookProject {
-		const name = nextProjectName(folderName, this.registry.projects);
+		const name = nextProjectName(folderName.trim() || 'Untitled project', this.registry.projects);
 		const project: BookProject = {
-			id: this.createId(), name, source: { type: 'folder', path: folderPath },
+			id: this.nextAvailableProjectId(), name, source: { type: 'folder', path: folderPath },
 			metadata: { ...DEFAULT_PROJECT_METADATA, title: folderName }, design: { ...DEFAULT_PROJECT_DESIGN },
 			preview: defaultPreviewState(this.defaultDevice),
 		};
@@ -208,6 +226,84 @@ export class BookProjectStore {
 		this.registry = { ...this.registry, activeProjectId: projectId };
 		this.runtime = { ...EMPTY_RUNTIME, status: 'loading' };
 		this.commit(true);
+	}
+
+	duplicateProject(projectId: string, requestedName: string): BookProject {
+		const source = this.registry.projects.find((project) => project.id === projectId);
+		if (!source) throw new Error('Select a project before using Save as.');
+		const name = this.validatedUniqueName(requestedName);
+		const project = cloneProject(source);
+		if (!project) throw new Error('The selected project could not be copied.');
+		project.id = this.nextAvailableProjectId();
+		project.name = name;
+		project.preview = resetTransientPreview(project.preview);
+		this.registry = { ...this.registry, projects: [...this.registry.projects, project], activeProjectId: project.id };
+		this.runtime = { ...EMPTY_RUNTIME, status: 'loading' };
+		this.commit(true);
+		return cloneProject(project) as BookProject;
+	}
+
+	renameProject(projectId: string, requestedName: string): BookProject {
+		const existing = this.registry.projects.find((project) => project.id === projectId);
+		if (!existing) throw new Error('That project no longer exists.');
+		const name = this.validatedUniqueName(requestedName, projectId);
+		if (name === existing.name) return cloneProject(existing) as BookProject;
+		const renamed = { ...existing, name };
+		this.registry = { ...this.registry, projects: this.registry.projects.map((project) => project.id === projectId ? renamed : project) };
+		this.commit(true);
+		return cloneProject(renamed) as BookProject;
+	}
+
+	deleteProject(projectId: string): boolean {
+		const deletedIndex = this.registry.projects.findIndex((project) => project.id === projectId);
+		if (deletedIndex < 0) return false;
+		const projects = this.registry.projects.filter((project) => project.id !== projectId);
+		const deletingActive = this.registry.activeProjectId === projectId;
+		const fallback = projects[Math.min(deletedIndex, projects.length - 1)] ?? null;
+		this.registry = {
+			...this.registry,
+			projects,
+			activeProjectId: deletingActive ? fallback?.id ?? null : this.registry.activeProjectId,
+		};
+		if (deletingActive) this.runtime = fallback ? { ...EMPTY_RUNTIME, status: 'loading' } : { ...EMPTY_RUNTIME };
+		this.commit(true);
+		return true;
+	}
+
+	hasProject(projectId: string): boolean {
+		return this.registry.projects.some((project) => project.id === projectId);
+	}
+
+	getProjectSnapshot(projectId: string): { project: BookProject; mockups: ImportedHtmlMockup[] } | null {
+		const project = this.registry.projects.find((candidate) => candidate.id === projectId);
+		if (!project) return null;
+		const referencedIds = projectMockupIds(project);
+		return {
+			project: cloneProject(project) as BookProject,
+			mockups: this.registry.mockups.filter((mockup) => referencedIds.has(mockup.id)).map(cloneImportedMockup),
+		};
+	}
+
+	importProject(
+		incomingProject: BookProject,
+		incomingMockups: ImportedHtmlMockup[],
+		collisionStrategy: ProjectImportCollisionStrategy = 'reject',
+	): BookProject {
+		const conflicts = this.hasProject(incomingProject.id);
+		if (conflicts && collisionStrategy === 'reject') throw new ProjectIdConflictError(incomingProject.id);
+		const merged = mergeImportedMockups(this.registry.mockups, incomingMockups, incomingProject);
+		const project = merged.project;
+		if (conflicts && collisionStrategy === 'copy') project.id = this.nextAvailableProjectId();
+		const nameCandidates = this.registry.projects.filter((candidate) => !(conflicts && collisionStrategy === 'replace' && candidate.id === project.id));
+		project.name = nextProjectName(project.name.trim() || 'Imported project', nameCandidates);
+		project.preview = resetTransientPreview(project.preview);
+		const projects = conflicts && collisionStrategy === 'replace'
+			? this.registry.projects.map((candidate) => candidate.id === project.id ? project : candidate)
+			: [...this.registry.projects, project];
+		this.registry = { ...this.registry, projects, mockups: merged.mockups, activeProjectId: project.id };
+		this.runtime = { ...EMPTY_RUNTIME, status: 'loading' };
+		this.commit(true);
+		return cloneProject(project) as BookProject;
 	}
 
 	updateMetadata(metadata: Partial<BookProjectMetadata>): void {
@@ -306,6 +402,22 @@ export class BookProjectStore {
 		this.registry = { ...this.registry, projects: this.registry.projects.map((project) => project.id === activeId ? update(project) : project) };
 		if (refreshRenderedHtml) this.refreshRenderedHtml();
 		this.commit(true);
+	}
+	private validatedUniqueName(requestedName: string, excludedProjectId?: string): string {
+		const name = requestedName.trim();
+		if (!name) throw new ProjectNameValidationError('Project names cannot be blank.');
+		if (name.length > 200 || containsControlCharacter(name)) throw new ProjectNameValidationError('Use a project name of 200 characters or fewer without control characters.');
+		if (this.registry.projects.some((project) => project.id !== excludedProjectId && project.name.localeCompare(name, undefined, { sensitivity: 'base' }) === 0)) {
+			throw new ProjectNameValidationError(`A project named "${name}" already exists.`);
+		}
+		return name;
+	}
+	private nextAvailableProjectId(): string {
+		for (let attempt = 0; attempt < 100; attempt += 1) {
+			const id = this.createId();
+			if (id && !this.registry.projects.some((project) => project.id === id)) return id;
+		}
+		return defaultProjectIdWithSuffix(new Set(this.registry.projects.map((project) => project.id)));
 	}
 	private refreshRenderedHtml(): void {
 		const project = this.activeProject;
@@ -510,5 +622,78 @@ function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup {
 	return { ...mockup, color: { ...mockup.color }, display: { ...mockup.display }, postures: mockup.postures.map((posture) => ({ ...posture, frame: posture.frame ? { ...posture.frame } : null })) };
 }
 function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup) }; }
-function nextProjectName(folderName: string, projects: BookProject[]): string { const used = new Set(projects.map((project) => project.name)); if (!used.has(folderName)) return folderName; for (let suffix = 2; ; suffix += 1) { const candidate = `${folderName} ${suffix}`; if (!used.has(candidate)) return candidate; } }
+function resetTransientPreview(preview: BookProjectPreviewState): BookProjectPreviewState {
+	return { ...preview, pageIndex: 0, activeSectionId: null, scrollTop: 0 };
+}
+function projectMockupIds(project: BookProject): Set<string> {
+	const ids = new Set<string>();
+	if (project.preview.importedMockupId) ids.add(project.preview.importedMockupId);
+	for (const id of Object.keys(project.preview.mockupPostures)) ids.add(id);
+	for (const key of Object.keys(project.preview.deviceContentSettings)) {
+		if (key.startsWith('imported:')) ids.add(key.slice('imported:'.length));
+	}
+	return ids;
+}
+function mergeImportedMockups(
+	existingMockups: ImportedHtmlMockup[],
+	incomingMockups: ImportedHtmlMockup[],
+	incomingProject: BookProject,
+): { project: BookProject; mockups: ImportedHtmlMockup[] } {
+	const mockups = existingMockups.map(cloneImportedMockup);
+	const idMap = new Map<string, string>();
+	for (const incoming of incomingMockups) {
+		const existing = mockups.find((mockup) => mockup.id === incoming.id);
+		if (!existing) {
+			mockups.push(cloneImportedMockup(incoming));
+			idMap.set(incoming.id, incoming.id);
+			continue;
+		}
+		if (JSON.stringify(existing) === JSON.stringify(incoming)) {
+			idMap.set(incoming.id, incoming.id);
+			continue;
+		}
+		const id = nextImportedMockupId(incoming.id, new Set(mockups.map((mockup) => mockup.id)));
+		mockups.push({ ...cloneImportedMockup(incoming), id });
+		idMap.set(incoming.id, id);
+	}
+	return { project: remapProjectMockups(incomingProject, idMap), mockups };
+}
+function remapProjectMockups(project: BookProject, idMap: Map<string, string>): BookProject {
+	const cloned = cloneProject(project) as BookProject;
+	const importedMockupId = cloned.preview.importedMockupId
+		? idMap.get(cloned.preview.importedMockupId) ?? cloned.preview.importedMockupId
+		: null;
+	const mockupPostures = Object.fromEntries(Object.entries(cloned.preview.mockupPostures).map(([id, posture]) => [idMap.get(id) ?? id, posture]));
+	const deviceContentSettings = Object.fromEntries(Object.entries(cloned.preview.deviceContentSettings).map(([key, settings]) => {
+		if (!key.startsWith('imported:')) return [key, settings];
+		const id = key.slice('imported:'.length);
+		return [`imported:${idMap.get(id) ?? id}`, settings];
+	}));
+	return { ...cloned, preview: { ...cloned.preview, importedMockupId, mockupPostures, deviceContentSettings } };
+}
+function nextImportedMockupId(baseId: string, used: Set<string>): string {
+	for (let suffix = 2; ; suffix += 1) {
+		const candidate = `${baseId}-imported-${suffix}`;
+		if (!used.has(candidate)) return candidate;
+	}
+}
+function nextProjectName(folderName: string, projects: BookProject[]): string {
+	const used = new Set(projects.map((project) => project.name.toLocaleLowerCase()));
+	if (!used.has(folderName.toLocaleLowerCase())) return folderName;
+	for (let suffix = 2; ; suffix += 1) {
+		const candidate = `${folderName} ${suffix}`;
+		if (!used.has(candidate.toLocaleLowerCase())) return candidate;
+	}
+}
+function defaultProjectIdWithSuffix(used: Set<string>): string {
+	const base = defaultProjectId();
+	if (!used.has(base)) return base;
+	for (let suffix = 2; ; suffix += 1) {
+		const candidate = `${base}-${suffix}`;
+		if (!used.has(candidate)) return candidate;
+	}
+}
+function containsControlCharacter(value: string): boolean {
+	return Array.from(value).some((character) => character.charCodeAt(0) < 32);
+}
 function defaultProjectId(): string { return typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `book-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`; }

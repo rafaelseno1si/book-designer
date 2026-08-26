@@ -3,24 +3,25 @@ import { StrictMode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { BookDesignerApp } from '../components/BookDesignerApp';
 import { BOOK_DESIGNER_ICON, BOOK_DESIGNER_VIEW_TYPE } from '../plugin/constants';
+import type { ProjectManagementActions } from '../plugin/project-management';
 import type { BookProjectStore } from '../plugin/project-store';
 
 export class BookDesignerView extends ItemView {
 	private root: Root | null = null;
 	private readonly projectStore: BookProjectStore;
+	private readonly projectActions: ProjectManagementActions;
 	private readonly openPreview: () => void;
-	private readonly createProject: () => void;
 
 	constructor(
 		leaf: WorkspaceLeaf,
 		projectStore: BookProjectStore,
+		projectActions: ProjectManagementActions,
 		openPreview: () => void,
-		createProject: () => void,
 	) {
 		super(leaf);
 		this.projectStore = projectStore;
+		this.projectActions = projectActions;
 		this.openPreview = openPreview;
-		this.createProject = createProject;
 	}
 
 	getViewType() {
@@ -48,8 +49,8 @@ export class BookDesignerView extends ItemView {
 			<StrictMode>
 				<BookDesignerApp
 					projectStore={this.projectStore}
+					projectActions={this.projectActions}
 					onOpenPreview={this.openPreview}
-					onCreateProject={this.createProject}
 				/>
 			</StrictMode>,
 		);

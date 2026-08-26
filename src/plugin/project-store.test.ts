@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BookProjectStore, emptyProjectRegistry, normalizeProjectRegistry, renderPreviewState } from './project-store';
+import { BookProjectStore, ProjectIdConflictError, ProjectNameValidationError, emptyProjectRegistry, normalizeProjectRegistry, renderPreviewState } from './project-store';
 
 describe('BookProjectStore', () => {
 	it('keeps the external-store snapshot stable until state changes', () => {
@@ -133,5 +133,79 @@ describe('BookProjectStore', () => {
 
 		expect(store.getSnapshot().activeProject?.preview.mockupPostures).toEqual({ razr: 'fold1' });
 		expect(store.getSnapshot().registry.mockups[0]?.postures).toEqual([{ id: 'unfold', label: 'Unfolded', frame: { left: 0, top: 0, width: 820, height: 1200 } }, { id: 'fold1', label: 'Folded closed', frame: { left: 180, top: 300, width: 460, height: 900 } }]);
+	});
+
+	it('Save as creates a new stable ID, preserves durable configuration, and resets navigation', () => {
+		const ids = ['project-a', 'project-b'];
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => ids.shift() ?? 'unexpected');
+		store.createProject('Books/Novel', 'Novel');
+		store.updateMetadata({ author: 'Author', publisher: 'Press' });
+		store.updateDesign({ themeId: 'minimal', sceneBreakId: 'ornament' });
+		store.updatePreview({ readerScale: 135, displayTheme: 'sepia', pageIndex: 8, activeSectionId: 'chapter-8', scrollTop: 900 });
+
+		const copy = store.duplicateProject('project-a', 'Novel second edition');
+
+		expect(copy).toMatchObject({
+			id: 'project-b',
+			name: 'Novel second edition',
+			source: { path: 'Books/Novel' },
+			metadata: { author: 'Author', publisher: 'Press' },
+			design: { themeId: 'minimal', sceneBreakId: 'ornament' },
+			preview: { readerScale: 135, displayTheme: 'sepia', pageIndex: 0, activeSectionId: null, scrollTop: 0 },
+		});
+		expect(store.getSnapshot().activeProject?.id).toBe('project-b');
+		expect(store.getSnapshot().registry.projects).toHaveLength(2);
+	});
+
+	it('Save as requires a non-empty unique name', () => {
+		const ids = ['project-a', 'project-b'];
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => ids.shift() ?? 'unexpected');
+		store.createProject('Books/Novel', 'Novel');
+		expect(() => store.duplicateProject('project-a', '   ')).toThrow(ProjectNameValidationError);
+		expect(() => store.duplicateProject('project-a', 'novel')).toThrow('already exists');
+	});
+
+	it('rename validates uniqueness and persists immutable state', async () => {
+		const persist = vi.fn(async (_registry: unknown) => undefined);
+		const ids = ['project-a', 'project-b'];
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', persist, () => ids.shift() ?? 'unexpected');
+		store.createProject('Books/First', 'First');
+		store.createProject('Books/Second', 'Second');
+		const before = store.getSnapshot();
+		store.renameProject('project-b', 'Renamed');
+		expect(store.getSnapshot()).not.toBe(before);
+		expect(store.getSnapshot().activeProject?.name).toBe('Renamed');
+		expect(() => store.renameProject('project-b', 'First')).toThrow(ProjectNameValidationError);
+		await Promise.resolve();
+		expect(persist).toHaveBeenLastCalledWith(store.getSnapshot().registry);
+	});
+
+	it('deletes only project configuration and selects a valid fallback', () => {
+		const sourceNotes = ['Books/First/01.md', 'Books/Second/01.md'];
+		const ids = ['project-a', 'project-b'];
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => ids.shift() ?? 'unexpected');
+		store.createProject('Books/First', 'First');
+		store.createProject('Books/Second', 'Second');
+
+		expect(store.deleteProject('project-b')).toBe(true);
+		expect(sourceNotes).toEqual(['Books/First/01.md', 'Books/Second/01.md']);
+		expect(store.getSnapshot().registry.projects).toEqual([expect.objectContaining({ id: 'project-a', source: { type: 'folder', path: 'Books/First' } })]);
+		expect(store.getSnapshot().activeProject?.id).toBe('project-a');
+	});
+
+	it('imports and selects projects without silently overwriting ID collisions', () => {
+		const ids = ['project-a', 'project-copy'];
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => ids.shift() ?? 'unexpected');
+		const original = store.createProject('Books/Original', 'Original');
+		const imported = { ...original, name: 'Imported', source: { type: 'folder' as const, path: 'Books/Imported' } };
+
+		expect(() => store.importProject(imported, [])).toThrow(ProjectIdConflictError);
+		expect(store.getSnapshot().registry.projects).toHaveLength(1);
+
+		const copy = store.importProject(imported, [], 'copy');
+		expect(copy.id).toBe('project-copy');
+		expect(copy.name).toBe('Imported');
+		expect(store.getSnapshot().activeProject?.id).toBe('project-copy');
+		expect(store.getSnapshot().registry.projects).toHaveLength(2);
 	});
 });

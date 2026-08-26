@@ -2,17 +2,28 @@
 
 Book Designer is an Obsidian community plugin for visually designing and previewing manuscripts as books.
 
-Phase 0 establishes the plugin foundation:
+The plugin currently provides:
 
-- A custom Obsidian workspace view named **Book Designer**
-- A custom Obsidian workspace view named **Book Preview**
-- React-backed application shells for both views
-- A responsive editorial workspace layout
-- Shared in-memory project state for Designer and Preview
-- Validated global settings
-- Unit-test infrastructure for pure TypeScript modules
+- A restrained **Book Designer** project-management workspace with a collapsible navigation rail
+- Folder-backed projects with automatic internal persistence through Obsidian plugin data
+- Create, select, rename, duplicate with **Save as**, and delete operations that never modify manuscript notes
+- Portable `.book-designer.json` import/export for one project configuration
+- Validated, collision-safe imports with explicit replace/copy/cancel choices
+- A separate, shared-state **Book Preview** tab with live manuscript refresh and device simulation
+- Browser-compatible TypeScript and vault API I/O for desktop and mobile Obsidian
 
-Manuscript selection, Markdown parsing, real preview rendering, project persistence, and export are planned for later phases.
+The Designer intentionally contains project management rather than book design controls. Existing metadata, design, and durable Preview settings remain part of each project and continue to drive Preview.
+
+## Project persistence and files
+
+Book Designer automatically saves the internal project registry in plugin data. This autosave is the normal working state and does not create files in the manuscript folder.
+
+- **Save as** duplicates the selected internal project with a new stable ID. It preserves its source and durable configuration while resetting page, section, and scroll position.
+- **Open/import** reads a vault-local `.book-designer.json` file as untrusted input, validates it, and selects the imported project. ID collisions require an explicit replace, copy, or cancel decision.
+- **Export** writes one portable, versioned project configuration to a vault-relative path. It contains no manuscript text, rendered HTML, runtime Book Model, global plugin settings, or unrelated mockups.
+- Publication export (EPUB, PDF, or rendered book output) is a separate future feature.
+
+Deleting a project removes only its configuration. It never deletes or edits the referenced folder or notes.
 
 ## Development
 
@@ -56,7 +67,7 @@ This repository is intended to live inside an Obsidian vault at:
 
 After building, reload Obsidian 1.7.2 or later and enable **Book Designer** in **Settings -> Community plugins**.
 
-Use the **Book Designer** ribbon button or **Book Designer: Open** to open the configuration workspace. Use the **Book Preview** ribbon button or **Book Designer: Open preview** to open the lightweight preview view. Because both are normal Obsidian tabs, they can be arranged beside Markdown, Longform, or each other.
+Use the **Book Designer** ribbon button or **Book Designer: Open** to open the project workspace. Select **Project file** to manage projects, or **Open preview** to reveal the active project in the separate Preview tab. Because both are normal Obsidian tabs, they can be arranged beside Markdown, Longform, or each other.
 
 ## Release artifacts
 

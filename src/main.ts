@@ -1,4 +1,4 @@
-import { editorInfoField, Notice, Plugin, TFile } from 'obsidian';
+import { editorInfoField, Plugin, TFile } from 'obsidian';
 import { ViewPlugin, type ViewUpdate } from '@codemirror/view';
 import type { VaultManuscriptReader } from './core/sources/manuscript-source';
 import { registerBookDesignerCommands } from './plugin/commands';
@@ -12,18 +12,19 @@ import {
 } from './plugin/constants';
 import { normalizeBookDesignerData, type BookDesignerPersistedData } from './plugin/data';
 import { ActiveManuscriptRuntime } from './plugin/manuscript-runtime';
+import { ProjectManagementService } from './plugin/project-management';
 import { BookProjectStore } from './plugin/project-store';
 import type { BookDesignerSettings } from './plugin/settings';
 import { BookDesignerSettingsTab } from './views/BookDesignerSettingsTab';
 import { BookDesignerView } from './views/BookDesignerView';
 import { BookPreviewView } from './views/BookPreviewView';
-import { pickVaultFolder } from './views/FolderPickerModal';
 
 export default class BookDesignerPlugin extends Plugin {
 	settings!: BookDesignerSettings;
 	projectStore!: BookProjectStore;
 	private data!: BookDesignerPersistedData;
 	private manuscriptRuntime!: ActiveManuscriptRuntime;
+	private projectManagement!: ProjectManagementService;
 
 	async onload() {
 		await this.loadSettings();
@@ -35,6 +36,7 @@ export default class BookDesignerPlugin extends Plugin {
 				await this.saveData(this.data);
 			},
 		);
+		this.projectManagement = new ProjectManagementService(this.app, this.projectStore);
 		this.manuscriptRuntime = new ActiveManuscriptRuntime(new ObsidianVaultReader(this), this.projectStore);
 		this.register(this.projectStore.subscribe(() => this.manuscriptRuntime.handleStoreChange()));
 		this.register(() => this.manuscriptRuntime.dispose());
@@ -51,7 +53,7 @@ export default class BookDesignerPlugin extends Plugin {
 		this.registerView(
 			BOOK_DESIGNER_VIEW_TYPE,
 			(leaf) =>
-				new BookDesignerView(leaf, this.projectStore, () => { void this.activatePreviewView(); }, () => { void this.createProjectFromFolder(); }),
+				new BookDesignerView(leaf, this.projectStore, this.projectManagement, () => { void this.activatePreviewView(); }),
 		);
 		this.registerView(
 			BOOK_PREVIEW_VIEW_TYPE,
@@ -104,19 +106,6 @@ export default class BookDesignerPlugin extends Plugin {
 		this.settings = nextSettings;
 		this.data = { ...this.data, settings: nextSettings };
 		await this.saveData(this.data);
-	}
-
-	private async createProjectFromFolder() {
-		try {
-			const folder = await pickVaultFolder(this.app);
-			if (!folder) return;
-			const folderName = folder.name || this.app.vault.getName();
-			this.projectStore.createProject(folder.path, folderName);
-			new Notice(`Created Book Project: ${folderName}`);
-		} catch (error) {
-			console.error('Book Designer could not create a project.', error);
-			new Notice('Book designer could not create that project. Check the developer console for details.');
-		}
 	}
 
 	private registerLiveEditorSynchronization() {

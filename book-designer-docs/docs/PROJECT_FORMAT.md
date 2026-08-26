@@ -1,108 +1,112 @@
-# Book Designer Project Format
+# Book Designer project format
 
-## Purpose
+## Persistence model
 
-A Book Designer project associates manuscript source files with design settings.
+Book Designer has two complementary forms of project persistence:
 
-The manuscript remains ordinary Markdown in the vault.
+- Internal plugin data automatically saves the versioned project registry, active project, and imported mockup library.
+- A portable `.book-designer.json` file exports one project configuration for backup, version control, or import into another vault.
 
-The project format should store references and configuration, not duplicate the manuscript text.
+Neither form copies manuscript Markdown. Projects continue to reference a vault folder through the source-adapter configuration.
 
----
+**Save as** is not a file export. It duplicates the active project inside the internal registry with a new stable ID and resets transient Preview navigation.
 
-## Example conceptual project
+## Portable format v1
+
+The top-level discriminator and version are fixed:
 
 ```json
 {
+  "format": "book-designer-project",
   "version": 1,
-  "id": "my-novel",
-  "name": "My Novel",
-  "source": {
-    "type": "folder",
-    "path": "Writing/My Novel"
-  },
-  "metadata": {
-    "title": "My Novel",
-    "author": "Author Name",
-    "language": "en"
-  },
-  "design": {
-    "themeId": "classic",
-    "overrides": {
-      "chapterHeadingStyle": "ornament",
-      "firstParagraphStyle": "no-indent",
-      "sceneBreakStyle": "fleuron"
+  "project": {
+    "id": "project-01",
+    "name": "My Novel",
+    "source": { "type": "folder", "path": "Writing/My Novel" },
+    "metadata": {
+      "title": "My Novel",
+      "author": "Author Name",
+      "language": "english",
+      "publisher": "",
+      "isbn": ""
+    },
+    "design": {
+      "themeId": "classic",
+      "typographyScale": "comfortable",
+      "chapterStyleId": "quiet",
+      "sceneBreakId": "space"
+    },
+    "preview": {
+      "deviceId": "ereader-6",
+      "readerScale": 100,
+      "contentWidth": 100,
+      "contentHeight": 100,
+      "frameColor": "#2a2a2a",
+      "displayTheme": "light",
+      "brightness": 100,
+      "warmth": 0,
+      "einkRenderMode": "monochrome",
+      "colorSoftTone": "standard",
+      "publisherFontSettings": true,
+      "printColorMode": "color",
+      "printPaginationMode": "fast",
+      "printFacingPages": false,
+      "deviceContentSettings": {},
+      "deviceScale": 100,
+      "autoDeviceScale": true,
+      "customDeviceWidth": 390,
+      "customDeviceHeight": 844,
+      "mockupId": "plain",
+      "importedMockupId": null,
+      "mockupPostures": {},
+      "mode": "paged",
+      "orientation": "portrait"
     }
   },
-  "previewDefaults": {
-    "devicePreset": "ereader-6"
-  }
+  "mockups": []
 }
 ```
 
-Exact schema is not yet frozen.
+The durable Preview fields follow the current `BookProjectPreviewState` configuration, except for the transient navigation fields listed below. Device-specific content settings and imported-mockup posture choices are durable.
 
----
+## Included data
 
-## Versioning
+A v1 file contains:
 
-Always include a project schema version.
+- one project ID and name
+- one folder source configuration
+- book metadata
+- book design configuration
+- durable Preview and device configuration
+- only imported HTML mockups referenced by that project
 
-```ts
-interface BookDesignerProject {
-  version: number;
-}
-```
+Mockups remain declarative, self-contained, sanitized HTML/CSS assets. They are size-limited and revalidated when a project file is opened.
 
-When schema changes, migrate old versions explicitly.
+## Excluded data
 
-Do not silently reinterpret old settings.
+A portable project file never contains:
 
----
+- manuscript text or source note contents
+- the semantic runtime Book Model
+- rendered HTML/XHTML
+- Preview runtime errors or loading state
+- plugin-global settings
+- the whole internal project registry
+- unrelated imported mockups
+- transient Preview navigation: `pageIndex`, `activeSectionId`, and `scrollTop`
 
-## Source configuration
+Transient navigation is reset to the beginning when a project is duplicated or imported.
 
-Possible:
+## Validation and compatibility
 
-```ts
-type ProjectSourceConfig =
-  | FolderSourceConfig
-  | ManualSourceConfig
-  | LongformSourceConfig;
-```
+Imported JSON is parsed as `unknown` and checked before it reaches the project store. Validation covers the discriminator, schema version, IDs, names, vault-relative folder path, metadata, design and Preview values, mockup structure, unsafe HTML, and file/field size limits.
 
-Example:
+Paths containing absolute prefixes, backslashes, empty segments, control characters, `.` segments, or `..` traversal are rejected. Unsupported future versions produce an actionable error instead of being reinterpreted.
 
-```ts
-interface FolderSourceConfig {
-  type: "folder";
-  path: string;
-}
-```
+If a project ID already exists, the user must explicitly choose to replace the existing configuration, import a copy with a new ID, or cancel. Import never silently overwrites a project. An imported mockup whose ID conflicts with different library content is assigned a collision-safe ID and the project references are remapped.
 
----
+If the referenced manuscript folder is missing from the current vault, Book Designer keeps the imported configuration and shows a warning. No source notes are created, changed, or deleted.
 
-## Design configuration
+## Book export is separate
 
-Separate:
-
-- theme identity
-- user overrides
-- ebook settings
-- print settings later
-
-Do not store temporary preview state as publication settings.
-
----
-
-## Persistence location
-
-Initial implementation can use Obsidian plugin data storage.
-
-Future project-file approaches may be considered if users need:
-
-- portability between vaults
-- Git-friendly project settings
-- multiple editions of the same manuscript
-
-Do not create new vault files unnecessarily in the first milestone.
+Portable project-file export writes configuration only. EPUB, PDF, rendered HTML, and other publication exports remain separate future features and do not use the `.book-designer.json` action.
