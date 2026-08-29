@@ -8,6 +8,7 @@ The plugin currently provides:
 - A searchable, paginated **Themes** workspace with responsive chapter-preview cards
 - Non-persistent hover/selection previews shared with the separate Preview tab
 - Persistent custom theme duplicates with modular chapter opening, first paragraph, typography, and ornamental-break presets
+- A staged **Print settings** workbench for trim, physical margins, typography, chapter flow, printer guidance, and preview indicators
 - Folder-backed projects with automatic internal persistence through Obsidian plugin data
 - Create, select, rename, duplicate with **Save as**, and delete operations that never modify manuscript notes
 - Portable `.book-designer.json` import/export for one project configuration
@@ -15,9 +16,11 @@ The plugin currently provides:
 - A separate, shared-state **Book Preview** tab with live manuscript refresh and device simulation
 - Browser-compatible TypeScript and vault API I/O for desktop and mobile Obsidian
 
-The Designer intentionally contains project management rather than book design controls. Existing metadata, design, and durable Preview settings remain part of each project and continue to drive Preview.
+Project management, themes, and print production live in distinct Designer sections. Metadata, design, print, and durable Preview settings remain part of each project and continue to drive Preview.
 
 The **Themes** section is the focused design surface. Hovering a theme or element preset temporarily overrides the Preview tab without changing the project. Selecting keeps that temporary preview active while other choices are hovered. **Apply** persists the selected theme or preset; **Cancel** restores the book's applied design. **Edit duplicate** creates a custom theme copy before opening the modular element editor.
+
+The **Print settings** section stages physical-edition changes until **Apply** is selected, while valid drafts render temporarily in the separate Preview tab. It supports preset and custom trim sizes, printer-safe and content margins, running header/footer zones, print-only type adjustments, recto chapter openings, folio start, color mode, and persistent margin indicators drawn over the actual print pages. Printer profiles are local advisory data and never block custom values.
 
 ## Project persistence and files
 
@@ -72,7 +75,7 @@ This repository is intended to live inside an Obsidian vault at:
 
 After building, reload Obsidian 1.7.2 or later and enable **Book Designer** in **Settings -> Community plugins**.
 
-Use the **Book Designer** ribbon button or **Book Designer: Open** to open the project workspace. Select **Project file** to manage projects, or **Open preview** to reveal the active project in the separate Preview tab. Because both are normal Obsidian tabs, they can be arranged beside Markdown, Longform, or each other.
+Use the **Book Designer** ribbon button or **Book Designer: Open** to open the project workspace. Select **Project file**, **Themes**, or **Print settings**, or select **Open preview** to reveal the active project in the separate Preview tab. Because both are normal Obsidian tabs, they can be arranged beside Markdown, Longform, or each other.
 
 ## Release artifacts
 

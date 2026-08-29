@@ -1,11 +1,13 @@
 import { ObsidianIcon } from './ObsidianIcon';
 
+export type BookDesignerSection = 'project-file' | 'themes' | 'print-settings';
+
 interface BookDesignerNavigationProps {
 	collapsed: boolean;
-	activeSection: 'project-file' | 'themes';
+	activeSection: BookDesignerSection;
 	canOpenPreview: boolean;
 	onToggleCollapsed: () => void;
-	onSelectSection: (section: 'project-file' | 'themes') => void;
+	onSelectSection: (section: BookDesignerSection) => void;
 	onOpenPreview: () => void;
 }
 
@@ -58,6 +60,17 @@ export function BookDesignerNavigation({
 				>
 					<ObsidianIcon name="palette" />
 					<span>Themes</span>
+				</button>
+				<button
+					type="button"
+					className={`book-designer-menu-item${activeSection === 'print-settings' ? ' is-selected' : ''}`}
+					aria-current={activeSection === 'print-settings' ? 'page' : undefined}
+					aria-label="Print settings"
+					title={collapsed ? 'Print settings' : undefined}
+					onClick={() => onSelectSection('print-settings')}
+				>
+					<ObsidianIcon name="printer" />
+					<span>Print settings</span>
 				</button>
 				<button
 					type="button"

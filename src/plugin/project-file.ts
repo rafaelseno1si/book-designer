@@ -14,9 +14,10 @@ import {
 	type BookProjectPreviewState,
 } from './project-store';
 import type { CustomBookTheme } from './theme-catalog';
+import { normalizePrintSettings, validatePrintSettings } from './print-settings';
 
 export const BOOK_DESIGNER_PROJECT_FORMAT = 'book-designer-project';
-export const BOOK_DESIGNER_PROJECT_FILE_VERSION = 1;
+export const BOOK_DESIGNER_PROJECT_FILE_VERSION = 2;
 export const BOOK_DESIGNER_PROJECT_FILE_EXTENSION = '.book-designer.json';
 export const MAX_PROJECT_FILE_BYTES = 5_000_000;
 
@@ -36,7 +37,7 @@ export interface PortableBookProject extends Omit<BookProject, 'preview'> {
 	preview: DurablePreviewState;
 }
 
-export interface BookDesignerProjectFileV1 {
+export interface BookDesignerProjectFileV2 {
 	format: typeof BOOK_DESIGNER_PROJECT_FORMAT;
 	version: typeof BOOK_DESIGNER_PROJECT_FILE_VERSION;
 	project: PortableBookProject;
@@ -64,7 +65,7 @@ export function serializeProjectFile(snapshot: ProjectExportSnapshot): string {
 		.filter((mockup) => referencedIds.has(mockup.id))
 		.map(cloneMockup)
 		.sort((left, right) => left.id.localeCompare(right.id));
-	const file: BookDesignerProjectFileV1 = {
+	const file: BookDesignerProjectFileV2 = {
 		format: BOOK_DESIGNER_PROJECT_FORMAT,
 		version: BOOK_DESIGNER_PROJECT_FILE_VERSION,
 		project,
@@ -97,14 +98,14 @@ export function parseProjectFileJson(source: string): ProjectExportSnapshot {
 	if (value.format !== BOOK_DESIGNER_PROJECT_FORMAT) {
 		throw new ProjectFileValidationError(`Expected format "${BOOK_DESIGNER_PROJECT_FORMAT}".`);
 	}
-	if (value.version !== BOOK_DESIGNER_PROJECT_FILE_VERSION) {
+	if (value.version !== 1 && value.version !== BOOK_DESIGNER_PROJECT_FILE_VERSION) {
 		if (typeof value.version === 'number' && value.version > BOOK_DESIGNER_PROJECT_FILE_VERSION) {
 			throw new ProjectFileValidationError(`Project file version ${value.version} is newer than this version of Book Designer supports.`);
 		}
-		throw new ProjectFileValidationError('Only Book Designer project-file version 1 is supported.');
+		throw new ProjectFileValidationError('Only Book Designer project-file versions 1 and 2 are supported.');
 	}
 
-	const rawProject = validateProjectShape(value.project);
+	const rawProject = validateProjectShape(value.project, value.version);
 	const rawMockups = validateMockups(value.mockups);
 	const rawThemes = validateThemes(value.themes);
 	const rawPreview = rawProject.preview;
@@ -162,7 +163,7 @@ export function normalizePortableVaultPath(path: string): string {
 	return normalized;
 }
 
-function validateProjectShape(value: unknown): Record<string, unknown> & {
+function validateProjectShape(value: unknown, fileVersion: number): Record<string, unknown> & {
 	id: string;
 	name: string;
 	source: Record<string, unknown>;
@@ -184,9 +185,28 @@ function validateProjectShape(value: unknown): Record<string, unknown> & {
 	}
 	if (!isRecord(value.design)) throw new ProjectFileValidationError('The project design settings must be an object.');
 	validateDesignShape(value.design);
+	if (fileVersion >= 2 && !isRecord(value.print)) throw new ProjectFileValidationError('The project print settings must be an object.');
+	if (value.print !== undefined) {
+		if (!isRecord(value.print)) throw new ProjectFileValidationError('The project print settings must be an object.');
+		validatePrintShape(value.print);
+		const printErrors = validatePrintSettings(normalizePrintSettings(value.print));
+		if (printErrors[0]) throw new ProjectFileValidationError(printErrors[0]);
+	}
 	if (!isRecord(value.preview)) throw new ProjectFileValidationError('The project preview settings must be an object.');
 	validatePreviewShape(value.preview);
 	return { ...value, id, name, source, metadata: value.metadata, design: value.design, preview: value.preview };
+}
+
+function validatePrintShape(print: Record<string, unknown>): void {
+	const stringKeys = ['unit', 'trimPresetId', 'provider', 'chapterStart', 'pageNumberStart', 'imageMode'];
+	const numberKeys = ['trimWidthIn', 'trimHeightIn', 'safeInsideIn', 'safeOutsideIn', 'contentInsideIn', 'contentOutsideIn', 'headerTotalIn', 'headerGapIn', 'footerTotalIn', 'footerGapIn', 'fontSizePt', 'lineHeight'];
+	for (const key of stringKeys) {
+		if (print[key] !== undefined && typeof print[key] !== 'string') throw new ProjectFileValidationError(`print.${key} must be text.`);
+	}
+	for (const key of numberKeys) {
+		if (print[key] !== undefined && (typeof print[key] !== 'number' || !Number.isFinite(print[key]))) throw new ProjectFileValidationError(`print.${key} must be a finite number.`);
+	}
+	if (print.showMarginGuides !== undefined && typeof print.showMarginGuides !== 'boolean') throw new ProjectFileValidationError('print.showMarginGuides must be true or false.');
 }
 
 function validatePreviewShape(preview: Record<string, unknown>): void {
@@ -266,6 +286,7 @@ function portableProject(project: BookProject): PortableBookProject {
 		source: { ...project.source },
 		metadata: { ...project.metadata },
 		design: { ...project.design },
+		print: { ...project.print },
 		preview: {
 			...durablePreview,
 			deviceContentSettings: sortRecord(durablePreview.deviceContentSettings, (settings) => ({ ...settings })),

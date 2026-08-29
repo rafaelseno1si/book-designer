@@ -115,14 +115,41 @@ describe('BookProjectStore', () => {
 		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'motorola-razr', frameColor: '#686d73' });
 	});
 
-	it('persists independent print output and pagination controls', () => {
+	it('persists project print output and independent preview pagination controls', () => {
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');
-		store.updatePreview({ deviceId: 'print', mode: 'paged', printColorMode: 'black-white', printPaginationMode: 'complete', printFacingPages: true });
-		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ deviceId: 'print', printColorMode: 'black-white', printPaginationMode: 'complete', printFacingPages: true });
+		const print = store.getSnapshot().activeProject?.print;
+		if (!print) throw new Error('Expected print settings.');
+		store.updatePrintSettings({ ...print, imageMode: 'color', trimWidthIn: 6, trimHeightIn: 9 });
+		store.updatePreview({ deviceId: 'print', mode: 'paged', printPaginationMode: 'complete', printFacingPages: true });
+		expect(store.getSnapshot().activeProject).toMatchObject({ print: { imageMode: 'color', trimWidthIn: 6, trimHeightIn: 9 }, preview: { deviceId: 'print', printPaginationMode: 'complete', printFacingPages: true } });
 		store.updatePreview({ deviceId: 'phone', mockupId: 'plain' });
 		store.updatePreview({ deviceId: 'print', mockupId: 'plain' });
-		expect(store.getSnapshot().activeProject?.preview).toMatchObject({ printColorMode: 'black-white', printPaginationMode: 'complete', printFacingPages: true });
+		expect(store.getSnapshot().activeProject).toMatchObject({ print: { imageMode: 'color' }, preview: { printPaginationMode: 'complete', printFacingPages: true } });
+	});
+
+	it('previews valid print drafts without persisting them and keeps the draft live after apply', async () => {
+		const persist = vi.fn(async (_registry: unknown) => undefined);
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', persist, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		await Promise.resolve();
+		const persistedCalls = persist.mock.calls.length;
+		const applied = store.getSnapshot().activeProject?.print;
+		if (!applied) throw new Error('Expected print settings.');
+		const draft = { ...applied, trimPresetId: 'custom', trimWidthIn: 6, trimHeightIn: 9, showMarginGuides: true };
+
+		store.setPrintSettingsPreview(draft);
+
+		expect(store.getSnapshot().runtime.previewPrintSettings).toEqual(draft);
+		expect(store.getSnapshot().activeProject?.print).toEqual(applied);
+		expect(persist).toHaveBeenCalledTimes(persistedCalls);
+
+		store.updatePrintSettings(draft);
+		expect(store.getSnapshot().activeProject?.print).toEqual(draft);
+		expect(store.getSnapshot().runtime.previewPrintSettings).toEqual(draft);
+
+		store.setPrintSettingsPreview(null);
+		expect(store.getSnapshot().runtime.previewPrintSettings).toBeNull();
 	});
 
 	it('persists an imported mockup posture separately from the shared mockup library', () => {

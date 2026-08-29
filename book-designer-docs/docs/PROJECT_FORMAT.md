@@ -11,14 +11,14 @@ Neither form copies manuscript Markdown. Projects continue to reference a vault 
 
 **Save as** is not a file export. It duplicates the active project inside the internal registry with a new stable ID and resets transient Preview navigation.
 
-## Portable format v1
+## Portable format v2
 
 The top-level discriminator and version are fixed:
 
 ```json
 {
   "format": "book-designer-project",
-  "version": 1,
+  "version": 2,
   "project": {
     "id": "project-01",
     "name": "My Novel",
@@ -38,6 +38,27 @@ The top-level discriminator and version are fixed:
       "firstParagraphStyleId": "indented",
       "sceneBreakId": "space"
     },
+    "print": {
+      "unit": "in",
+      "trimPresetId": "5.5x8.5",
+      "trimWidthIn": 5.5,
+      "trimHeightIn": 8.5,
+      "provider": "generic",
+      "safeInsideIn": 0.375,
+      "safeOutsideIn": 0.25,
+      "contentInsideIn": 0.5,
+      "contentOutsideIn": 0.5,
+      "headerTotalIn": 0.625,
+      "headerGapIn": 0.25,
+      "footerTotalIn": 0.625,
+      "footerGapIn": 0.25,
+      "fontSizePt": 11,
+      "lineHeight": 1.55,
+      "chapterStart": "first-recto",
+      "pageNumberStart": "first-chapter",
+      "imageMode": "black-white",
+      "showMarginGuides": false
+    },
     "preview": {
       "deviceId": "ereader-6",
       "readerScale": 100,
@@ -50,7 +71,6 @@ The top-level discriminator and version are fixed:
       "einkRenderMode": "monochrome",
       "colorSoftTone": "standard",
       "publisherFontSettings": true,
-      "printColorMode": "color",
       "printPaginationMode": "fast",
       "printFacingPages": false,
       "deviceContentSettings": {},
@@ -74,12 +94,13 @@ The durable Preview fields follow the current `BookProjectPreviewState` configur
 
 ## Included data
 
-A v1 file contains:
+A v2 file contains:
 
 - one project ID and name
 - one folder source configuration
 - book metadata
 - book design configuration
+- physical print configuration
 - durable Preview and device configuration
 - only imported HTML mockups referenced by that project
 - only the custom theme referenced by that project
@@ -105,6 +126,8 @@ Transient navigation is reset to the beginning when a project is duplicated or i
 ## Validation and compatibility
 
 Imported JSON is parsed as `unknown` and checked before it reaches the project store. Validation covers the discriminator, schema version, IDs, names, vault-relative folder path, metadata, design and Preview values, mockup structure, unsafe HTML, and file/field size limits.
+
+Version 1 project files remain importable. Their legacy `preview.printColorMode` value migrates into `print.imageMode`, and all other print fields receive safe defaults. New exports always use version 2.
 
 Paths containing absolute prefixes, backslashes, empty segments, control characters, `.` segments, or `..` traversal are rejected. Unsupported future versions produce an actionable error instead of being reinterpreted.
 

@@ -7,6 +7,7 @@ import {
 	type RefObject,
 } from 'react';
 import type { PreviewContentSettings, PreviewMode, BookProjectStore } from '../plugin/project-store';
+import { printPreviewDimensions, shouldInsertRectoBlank, visiblePrintPageNumber, type BookPrintSettings } from '../plugin/print-settings';
 import { builtInDisplayCategory, type DisplayCategory } from '../core/mockups/display-profile';
 import { previewMockup } from '../core/mockups/preview-mockup';
 import { importHtmlMockup, type ImportedHtmlMockup, type MockupColorConfig } from '../core/mockups/html-mockup-import';
@@ -31,16 +32,19 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	const [importedViewportBounds, setImportedViewportBounds] = useState<MockupViewportBounds | null>(null);
 	const [printCanvasColor, setPrintCanvasColor] = useState('rgb(32, 32, 32)');
 	const preview = project?.preview;
-	const isPrintPreview = preview?.deviceId === 'print';
-	const mockup = previewMockup(preview?.deviceId === 'kindle-paperwhite' ? 'kindle-paperwhite' : preview?.mockupId ?? 'plain');
+	const transientPrintSettings = snapshot.runtime.previewPrintSettings;
+	const activePrintSettings = transientPrintSettings ?? project?.print ?? null;
+	const effectiveDeviceId = transientPrintSettings ? 'print' : preview?.deviceId;
+	const isPrintPreview = effectiveDeviceId === 'print';
+	const mockup = previewMockup(effectiveDeviceId === 'kindle-paperwhite' ? 'kindle-paperwhite' : preview?.mockupId ?? 'plain');
 	const canvasRef = useRef<HTMLElement>(null);
 	const deviceRef = useRef<HTMLElement>(null);
 	const mockupDialogFileRef = useRef<HTMLInputElement>(null);
 	const settingsRef = useRef<HTMLDivElement>(null);
-	const selectedImportedMockup = preview?.deviceId === 'imported'
-		? snapshot.registry.mockups.find((candidate) => candidate.id === preview.importedMockupId) ?? null
+	const selectedImportedMockup = effectiveDeviceId === 'imported'
+		? snapshot.registry.mockups.find((candidate) => candidate.id === preview?.importedMockupId) ?? null
 		: null;
-	const builtInHtmlMockup = preview?.deviceId === MOTOROLA_RAZR_ID ? MOTOROLA_RAZR_MOCKUP : null;
+	const builtInHtmlMockup = effectiveDeviceId === MOTOROLA_RAZR_ID ? MOTOROLA_RAZR_MOCKUP : null;
 	const selectedHtmlMockup = selectedImportedMockup ?? builtInHtmlMockup;
 	const htmlMockupKey = selectedImportedMockup ? `imported:${selectedImportedMockup.id}` : builtInHtmlMockup ? `builtin:${builtInHtmlMockup.id}` : null;
 	const mockupPostures = selectedHtmlMockup?.postures ?? [];
@@ -49,11 +53,14 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		: null;
 	const activePostureDefinition = mockupPostures.find((posture) => posture.id === activeMockupPosture) ?? null;
 	const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-	const baseNativeDeviceDimensions = preview?.deviceId === 'custom'
-		? { width: preview.customDeviceWidth, height: preview.customDeviceHeight }
+	const printDimensions = activePrintSettings ? printPreviewDimensions(activePrintSettings) : PREVIEW_DEVICE_DIMENSIONS.print;
+	const baseNativeDeviceDimensions = isPrintPreview
+		? printDimensions
+		: effectiveDeviceId === 'custom'
+		? { width: preview?.customDeviceWidth ?? PREVIEW_DEVICE_DIMENSIONS.custom.width, height: preview?.customDeviceHeight ?? PREVIEW_DEVICE_DIMENSIONS.custom.height }
 		: selectedHtmlMockup
 			? { width: selectedHtmlMockup.width, height: selectedHtmlMockup.height }
-			: PREVIEW_DEVICE_DIMENSIONS[preview?.deviceId ?? 'ereader-6'];
+			: PREVIEW_DEVICE_DIMENSIONS[effectiveDeviceId ?? 'ereader-6'];
 	const nativeDeviceDimensions = isPrintPreview && preview?.printFacingPages
 		? { width: baseNativeDeviceDimensions.width * 2 + 28, height: baseNativeDeviceDimensions.height }
 		: baseNativeDeviceDimensions;
@@ -68,13 +75,16 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		: null);
 	const supportsFrameColor = !selectedHtmlMockup || selectedHtmlMockup.color.mode === 'tonal-ramp';
 	const displayCategory: DisplayCategory = selectedHtmlMockup?.display.category
-		?? builtInDisplayCategory(preview?.deviceId);
+		?? builtInDisplayCategory(effectiveDeviceId);
 	const isEInk = displayCategory === 'eink';
 	const isColorSoft = isEInk && preview?.einkRenderMode === 'colorsoft';
 	const deviceDimensions = importedViewport
 		? { width: importedViewport.width, height: importedViewport.height }
 		: nativeDeviceDimensions;
-	const isLandscape = preview?.orientation === 'landscape';
+	// Print trim dimensions already encode orientation. Reader devices still use
+	// the independent rotate control, but print must not inherit that rotation.
+	const effectiveOrientation = isPrintPreview ? 'portrait' : preview?.orientation ?? 'portrait';
+	const isLandscape = effectiveOrientation === 'landscape';
 	// The device keeps its authored/native geometry. In landscape we rotate that
 	// complete frame, while the stage reserves the swapped visual footprint.
 	const nativeDeviceSize = deviceDimensions;
@@ -116,6 +126,9 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 		return () => document.removeEventListener('pointerdown', closeWhenOutside);
 	}, [settingsOpen]);
 	useEffect(() => { setPageCount(1); }, [project?.id, preview?.mode, preview?.orientation]);
+	useEffect(() => {
+		if (!project || !isPrintPreview || preview?.printPaginationMode !== 'complete') projectStore.setPrintPageCount(project?.id ?? '', null);
+	}, [isPrintPreview, preview?.printPaginationMode, project?.id, projectStore]);
 	useEffect(() => {
 		const canvas = canvasRef.current;
 		if (!canvas) return;
@@ -209,8 +222,9 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 	return <section className="book-preview-shell" aria-label="Book Preview">
 		<header className={`book-preview-toolbar ${toolbarCollapsed ? 'is-collapsed' : ''}`}>
 			{project && preview && !toolbarCollapsed && <div className="book-preview-controls" aria-label="Reader simulation controls">
-				<label className="book-preview-device-control"><span>Device</span><select value={selectedImportedMockup ? `imported:${selectedImportedMockup.id}` : preview.deviceId} onChange={(event) => {
+				<label className="book-preview-device-control"><span>Device</span><select value={transientPrintSettings ? 'print' : selectedImportedMockup ? `imported:${selectedImportedMockup.id}` : preview.deviceId} onChange={(event) => {
 					const value = event.currentTarget.value;
+					if (transientPrintSettings) projectStore.setPrintSettingsPreview(null);
 					if (value === '__import_mockup__') { openMockupDialog(); return; }
 					if (value.startsWith('imported:')) {
 						projectStore.updatePreview({ deviceId: 'imported', mockupId: 'plain', importedMockupId: value.slice('imported:'.length), pageIndex: 0 });
@@ -228,10 +242,11 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 					<button type="button" className="book-preview-settings-button" onClick={() => setSettingsOpen((open) => { if (open) setMarginGuide(null); return !open; })} title="Preview settings" aria-label="Preview settings" aria-expanded={settingsOpen}>⚙</button>
 					{settingsOpen && <div className="book-preview-settings-popover" role="dialog" aria-label="Preview settings">
 						{isPrintPreview ? <>
-							<label className="book-preview-settings-range"><span>Output</span><select value={preview.printColorMode} onChange={(event) => projectStore.updatePreview({ printColorMode: event.currentTarget.value as 'color' | 'black-white', pageIndex: 0 })}><option value="color">Color</option><option value="black-white">Black &amp; white</option></select></label>
+							<label className="book-preview-settings-range"><span>Output</span><select value={activePrintSettings?.imageMode ?? 'black-white'} disabled={Boolean(transientPrintSettings)} onChange={(event) => projectStore.updatePrintSettings({ ...project.print, imageMode: event.currentTarget.value as 'color' | 'black-white' })}><option value="color">Color</option><option value="black-white">Black &amp; white</option></select></label>
 							<label className="book-preview-settings-range"><span>Pagination</span><select value={preview.printPaginationMode} onChange={(event) => projectStore.updatePreview({ printPaginationMode: event.currentTarget.value as 'fast' | 'complete', pageIndex: 0 })}><option value="fast">Fast · first 6 pages</option><option value="complete">Complete · whole book</option></select></label>
 							<label className="book-preview-settings-range"><span>Page view</span><select value={preview.printFacingPages ? 'facing' : 'single'} onChange={(event) => projectStore.updatePreview({ printFacingPages: event.currentTarget.value === 'facing', pageIndex: 0 })}><option value="single">Single page</option><option value="facing">Facing pages</option></select></label>
-							<p className="book-preview-print-settings-hint">Page size, margins, typography, bleed, and print marks will be configured in Book Designer.</p>
+							<label className="book-preview-settings-checkbox"><input type="checkbox" checked={activePrintSettings?.showMarginGuides ?? false} disabled={Boolean(transientPrintSettings)} onChange={(event) => projectStore.setPrintMarginGuides(event.currentTarget.checked)} /><span>Margin indicators</span></label>
+							<p className="book-preview-print-settings-hint">{transientPrintSettings ? 'Showing the temporary Print settings draft. Apply or cancel it from Print settings.' : 'Trim, margins, typography, and chapter flow are configured in Print settings.'}</p>
 						</> : <>
 						{isEInk
 							? <><label className="book-preview-settings-range"><span>Render mode</span><select value={preview.einkRenderMode} onChange={(event) => projectStore.updatePreview({ einkRenderMode: event.currentTarget.value as 'monochrome' | 'colorsoft' })}><option value="monochrome">Monochrome</option><option value="colorsoft">Colorsoft</option></select></label><label className="book-preview-settings-range"><span>Theme mode</span><select value={preview.displayTheme === 'dark' ? 'dark' : 'light'} onChange={(event) => projectStore.updatePreview({ displayTheme: event.currentTarget.value as 'light' | 'dark' })}><option value="light">Light</option><option value="dark">Dark</option></select></label>{isColorSoft && <label className="book-preview-settings-range"><span>Color mode</span><select value={preview.colorSoftTone} onChange={(event) => projectStore.updatePreview({ colorSoftTone: event.currentTarget.value as 'standard' | 'vivid' })}><option value="standard">Standard</option><option value="vivid">Vivid</option></select></label>}</>
@@ -255,13 +270,13 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 				</div>
 			</div>}
 		</header>
-		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${preview?.orientation === 'landscape' ? 'is-landscape' : ''}${selectedHtmlMockup ? ' is-html-mockup' : ''}${importedViewport?.explicit ? ' is-explicit-frame' : ''}`} data-device={preview?.deviceId ?? 'ereader-6'} data-mockup={mockup.id} style={deviceStyle} aria-label="Book preview viewport">
+		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${effectiveOrientation === 'landscape' ? 'is-landscape' : ''}${selectedHtmlMockup ? ' is-html-mockup' : ''}${importedViewport?.explicit ? ' is-explicit-frame' : ''}`} data-device={effectiveDeviceId ?? 'ereader-6'} data-mockup={mockup.id} style={deviceStyle} aria-label="Book preview viewport">
 			<div className="book-preview-screen">
 			{!project ? <PreviewMessage title="No active project" message="Create a Book Project from a vault folder in Book Designer." />
 				: snapshot.runtime.status === 'loading' ? <PreviewMessage title="Loading manuscript" message="Reading Markdown notes from the active folder." />
 				: snapshot.runtime.status === 'empty' ? <PreviewMessage title="No Markdown notes" message="This folder does not contain any Markdown files." />
 				: snapshot.runtime.status === 'error' ? <PreviewMessage title="Unable to load manuscript" message={snapshot.runtime.error ?? 'Check that the source folder still exists.'} />
-				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}:${isPrintPreview ? 'print' : 'reader'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} displayCategory={displayCategory} displaySettings={preview!} isPrint={isPrintPreview} printColorMode={preview!.printColorMode} printPaginationMode={preview!.printPaginationMode} printFacingPages={preview!.printFacingPages} printCanvasColor={printCanvasColor} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={preview!.orientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={setPageCount} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
+				: <BookPreviewFrame key={`${project.id}:${htmlMockupKey ?? 'builtin'}:${isPrintPreview ? 'print' : 'reader'}`} html={snapshot.runtime.renderedHtml} mockupHtml={selectedHtmlMockup?.html ?? null} mockupPosture={activeMockupPosture} mockupColor={selectedHtmlMockup?.color ?? null} hasDeclaredPostureFrame={Boolean(activePostureDefinition?.frame)} displayCategory={displayCategory} displaySettings={preview!} isPrint={isPrintPreview} printSettings={activePrintSettings ?? project.print} printPaginationMode={preview!.printPaginationMode} printFacingPages={preview!.printFacingPages} printCanvasColor={printCanvasColor} mockupNativeSize={selectedHtmlMockup ? nativeDeviceDimensions : null} mockupViewportBounds={importedViewport} orientation={effectiveOrientation} frameColor={preview!.frameColor} contentWidth={preview!.contentWidth} contentHeight={preview!.contentHeight} marginGuide={marginGuide} mode={preview!.mode} pageIndex={preview!.pageIndex} latestScrollTop={latestScrollTop} onMockupViewportBoundsChange={updateImportedViewportBounds} onLocationChange={updatePreviewLocation} onPageCountChange={(count) => { setPageCount(count); if (isPrintPreview && preview?.printPaginationMode === 'complete') projectStore.setPrintPageCount(project.id, count); }} onPageIndexChange={(pageIndex) => projectStore.updatePreview({ pageIndex })} />}
 			</div>
 			{mockup.id === 'kindle-paperwhite' && <span className="book-preview-mockup-logo" aria-hidden="true">kindle</span>}
 		</section>
@@ -345,7 +360,7 @@ function BookPreviewFrame({
 	displayCategory,
 	displaySettings,
 	isPrint,
-	printColorMode,
+	printSettings,
 	printPaginationMode,
 	printFacingPages,
 	printCanvasColor,
@@ -372,7 +387,7 @@ function BookPreviewFrame({
 	displayCategory: DisplayCategory;
 	displaySettings: Pick<PreviewContentSettings, 'displayTheme' | 'brightness' | 'warmth' | 'einkRenderMode' | 'colorSoftTone' | 'publisherFontSettings'>;
 	isPrint: boolean;
-	printColorMode: 'color' | 'black-white';
+	printSettings: BookPrintSettings;
 	printPaginationMode: 'fast' | 'complete';
 	printFacingPages: boolean;
 	printCanvasColor: string;
@@ -441,16 +456,16 @@ function BookPreviewFrame({
 		pagedVirtualizer.current = null;
 		materializedMode.current = null;
 		patchPreviewDocument(document, html);
-		applyPreviewDisplay(document, displayCategory, displaySettings, isPrint, printColorMode, printCanvasColor);
+		applyPreviewDisplay(document, displayCategory, displaySettings, isPrint, printSettings.imageMode, printCanvasColor);
 		renderedHtml.current = html;
 		applyLayout();
 	}, [html]);
 	useEffect(() => {
 		const document = frameRef.current?.contentDocument;
 		if (!loaded.current || !document) return;
-		applyPreviewDisplay(document, displayCategory, displaySettings, isPrint, printColorMode, printCanvasColor);
-	}, [displayCategory, displaySettings.displayTheme, displaySettings.brightness, displaySettings.warmth, displaySettings.einkRenderMode, displaySettings.colorSoftTone, displaySettings.publisherFontSettings, isPrint, printColorMode, printCanvasColor]);
-	useEffect(() => { if (loaded.current) applyLayout(); }, [mode, pageIndex, marginGuide]);
+		applyPreviewDisplay(document, displayCategory, displaySettings, isPrint, printSettings.imageMode, printCanvasColor);
+	}, [displayCategory, displaySettings.displayTheme, displaySettings.brightness, displaySettings.warmth, displaySettings.einkRenderMode, displaySettings.colorSoftTone, displaySettings.publisherFontSettings, isPrint, printSettings.imageMode, printCanvasColor]);
+	useEffect(() => { if (loaded.current) applyLayout(); }, [mode, pageIndex, marginGuide, printSettings.showMarginGuides]);
 	useEffect(() => {
 		if (!loaded.current) return;
 		if (modeRef.current === 'paged') {
@@ -477,7 +492,7 @@ function BookPreviewFrame({
 		pagedPagesCreated.current = false;
 		pagedViewportHeight.current = 0;
 		applyLayout();
-	}, [isPrint, printPaginationMode, printFacingPages, printCanvasColor, mode]);
+	}, [isPrint, printPaginationMode, printFacingPages, printCanvasColor, mode, printSettings.trimWidthIn, printSettings.trimHeightIn, printSettings.safeInsideIn, printSettings.safeOutsideIn, printSettings.contentInsideIn, printSettings.contentOutsideIn, printSettings.headerTotalIn, printSettings.headerGapIn, printSettings.footerTotalIn, printSettings.footerGapIn, printSettings.fontSizePt, printSettings.lineHeight, printSettings.chapterStart, printSettings.pageNumberStart, printSettings.showMarginGuides]);
 	useEffect(() => { applyImportedFrameColor(shellRef.current?.contentDocument ?? null, frameColor, mockupColor); }, [frameColor, mockupColor]);
 	useLayoutEffect(() => {
 		const shellDocument = shellRef.current?.contentDocument;
@@ -523,7 +538,7 @@ function BookPreviewFrame({
 			pagedPagesCreated.current = false;
 			if (usesPagedPages) pagedViewportHeight.current = frame.clientHeight;
 		}
-		applyPreviewLayout(document, activeMode, contentWidth, contentHeight, marginGuide, isPrint, printFacingPages, printCanvasColor);
+		applyPreviewLayout(document, activeMode, contentWidth, contentHeight, marginGuide, isPrint, printSettings, printFacingPages, printCanvasColor);
 		if (!usesPagedPages) {
 			if (!virtualizer.current) virtualizer.current = ContinuousBookVirtualizer.create(document, Math.max(360, frame.clientHeight));
 			virtualizer.current?.update(latestScrollTop.current, frame.clientHeight);
@@ -541,7 +556,8 @@ function BookPreviewFrame({
 		}
 		if (!pagedPagesCreated.current) {
 			restoreBookSections(document);
-			createPagedPages(document, isPrint && printPaginationMode === 'fast' ? 6 : Number.POSITIVE_INFINITY);
+			createPagedPages(document, isPrint && printPaginationMode === 'fast' ? 6 : Number.POSITIVE_INFINITY, isPrint ? printSettings : null);
+			if (isPrint) syncPrintMarginGuides(document, printSettings);
 			pagedPagesCreated.current = true;
 			pagedVirtualizer.current = PagedBookVirtualizer.create(document);
 		}
@@ -587,7 +603,7 @@ function BookPreviewFrame({
 		frameCleanup.current?.();
 		loaded.current = true;
 		renderedHtml.current = html;
-		applyPreviewDisplay(frame.contentDocument, displayCategory, displaySettings, isPrint, printColorMode, printCanvasColor);
+		applyPreviewDisplay(frame.contentDocument, displayCategory, displaySettings, isPrint, printSettings.imageMode, printCanvasColor);
 		applyLayout();
 		resizeObserver.current?.disconnect();
 		const invalidateForResize = () => {
@@ -794,7 +810,7 @@ function applyPreviewDisplay(
 	category: DisplayCategory,
 	settings: Pick<PreviewContentSettings, 'displayTheme' | 'brightness' | 'warmth' | 'einkRenderMode' | 'colorSoftTone' | 'publisherFontSettings'>,
 	isPrint: boolean,
-	printColorMode: 'color' | 'black-white',
+	printImageMode: BookPrintSettings['imageMode'],
 	printCanvasColor: string,
 ): void {
 	const styleId = 'book-designer-display-profile';
@@ -805,8 +821,8 @@ function applyPreviewDisplay(
 		// separate white sheet. The host's resolved canvas color cannot cross an
 		// iframe boundary, so it is passed in as a concrete color value.
 		const ink = contrastingInk(printCanvasColor);
-		style.textContent = printColorMode === 'black-white'
-			? `html,body{background:transparent!important;color:${ink}!important}body{filter:grayscale(1)!important}.book-page,.book-page *{color:#111!important}.book img{filter:grayscale(1) contrast(1.08)!important}`
+		style.textContent = printImageMode === 'black-white'
+			? `html,body{background:transparent!important;color:${ink}!important}body{filter:none!important}.book-page{color:#111!important}.book img,.book video{filter:grayscale(1) contrast(1.08)!important}`
 			: `html,body{background:transparent!important;color:${ink}!important}body{filter:none!important}.book-page{color:#171717!important}.book{background:transparent!important}`;
 		return;
 	}
@@ -906,7 +922,8 @@ function applyPreviewLayout(
 	contentWidth: number,
 	contentHeight: number,
 	marginGuide: 'side' | 'vertical' | null,
-	isPrint = false,
+	isPrint: boolean,
+	printSettings: BookPrintSettings,
 	printFacingPages = false,
 	printCanvasColor = 'rgb(32, 32, 32)',
 ): void {
@@ -917,11 +934,20 @@ function applyPreviewLayout(
 	if (!style || style.tagName !== 'STYLE') return;
 	if (isPrint) {
 		const ink = contrastingInk(printCanvasColor);
+		const safeVertical = printPercent(printSettings.safeOutsideIn, printSettings.trimHeightIn);
+		const safeInside = printPercent(printSettings.safeInsideIn, printSettings.trimWidthIn);
+		const safeOutside = printPercent(printSettings.safeOutsideIn, printSettings.trimWidthIn);
+		const contentInside = printPercent(printSettings.contentInsideIn, printSettings.trimWidthIn);
+		const contentOutside = printPercent(printSettings.contentOutsideIn, printSettings.trimWidthIn);
+		const headerTotal = printPercent(printSettings.headerTotalIn, printSettings.trimHeightIn);
+		const headerGap = printPercent(printSettings.headerGapIn, printSettings.trimHeightIn);
+		const footerTotal = printPercent(printSettings.footerTotalIn, printSettings.trimHeightIn);
+		const footerGap = printPercent(printSettings.footerGapIn, printSettings.trimHeightIn);
 		const facingGrid = printFacingPages
 			? '.book{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense;gap:18px;padding:18px;align-items:start}.book-page-slot:nth-child(odd),.book-page:nth-child(odd){grid-column:2}.book-page-slot:nth-child(even),.book-page:nth-child(even){grid-column:1}'
 			: '.book{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;padding:18px;align-items:start}';
 		const scrolling = mode === 'continuous';
-		style.textContent = `html{width:100%;min-width:0;background:${printCanvasColor}!important;${scrolling ? 'height:auto;overflow:auto;scrollbar-width:thin' : 'height:100%;overflow:hidden;scroll-snap-type:y mandatory;scrollbar-width:none'}}html::-webkit-scrollbar{${scrolling ? 'width:8px' : 'display:none'}}body{width:100%;min-height:100%;margin:0!important;padding:0!important;background:${printCanvasColor}!important;color:${ink}!important;overflow:${scrolling ? 'visible' : 'hidden'}!important}.book{width:100%;max-width:none;margin:0!important;box-sizing:border-box}.book-page-slot,.book-page{box-sizing:border-box;position:relative;display:block;min-width:0;height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};min-height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};max-height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};margin:0!important;padding:8vh 9%;overflow:clip!important;background:#fff!important;box-shadow:0 2px 9px rgb(0 0 0 / .28);${scrolling ? '' : 'scroll-snap-align:start;scroll-snap-stop:always'}}.book-page-slot>.book-page{height:100%;min-height:100%;max-height:100%;padding:8vh 9%;box-shadow:none}.book-page::after{content:'Page ' attr(data-page-number) ' · ' attr(data-page-side);position:absolute;right:9%;bottom:3.6%;color:#777!important;font:500 10px/1 system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}${facingGrid}`;
+		style.textContent = `html{width:100%;min-width:0;background:${printCanvasColor}!important;${scrolling ? 'height:auto;overflow:auto;scrollbar-width:thin' : 'height:100%;overflow:hidden;scroll-snap-type:y mandatory;scrollbar-width:none'}}html::-webkit-scrollbar{${scrolling ? 'width:8px' : 'display:none'}}body{width:100%;min-height:100%;margin:0!important;padding:0!important;background:${printCanvasColor}!important;color:${ink}!important;overflow:${scrolling ? 'visible' : 'hidden'}!important}.book{width:100%;max-width:none;margin:0!important;box-sizing:border-box}.book-page-slot,.book-page{box-sizing:border-box;position:relative;display:block;min-width:0;height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};min-height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};max-height:${scrolling ? 'calc(100vh - 36px)' : '100vh'};margin:0!important;overflow:clip!important;background:#fff!important;box-shadow:0 2px 9px rgb(0 0 0 / .28);${scrolling ? '' : 'scroll-snap-align:start;scroll-snap-stop:always'}}.book-page{--safe-top:${safeVertical};--safe-bottom:${safeVertical};--header-total:${headerTotal};--header-gap:${headerGap};--footer-total:${footerTotal};--footer-gap:${footerGap};padding:var(--header-total) var(--page-outside) var(--footer-total) var(--page-inside);font-size:${printSettings.fontSizePt}pt;line-height:${printSettings.lineHeight}}.book-page.is-recto{--page-inside:${contentInside};--page-outside:${contentOutside};--safe-inside:${safeInside};--safe-outside:${safeOutside}}.book-page.is-verso{--page-inside:${contentOutside};--page-outside:${contentInside};--safe-inside:${safeOutside};--safe-outside:${safeInside}}.book-page-slot>.book-page{height:100%;min-height:100%;max-height:100%;box-shadow:none}.book-page:not(.is-blank)::after{content:attr(data-page-number);position:absolute;bottom:var(--footer-gap);color:#777!important;font:500 9px/1 system-ui,sans-serif;letter-spacing:.06em}.book-page.is-recto:not(.is-blank)::after{right:var(--page-outside)}.book-page.is-verso:not(.is-blank)::after{left:var(--page-inside)}.book-page .chapter{margin:0}.book p,.book h1,.book h2,.book h3,.book h4,.book h5,.book h6,.book li,.book blockquote,.book a,.book code{min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.book img,.book video,.book iframe,.book pre,.book table{display:block;max-width:100%;height:auto}.book pre{white-space:pre-wrap;overflow-wrap:anywhere}.chapter header{break-after:avoid;break-inside:avoid}.book-designer-print-guides{position:absolute;inset:0;z-index:2147483646;pointer-events:none;font:500 8px/1 system-ui,sans-serif}.book-designer-print-guides .safe{position:absolute;top:var(--safe-top);right:var(--safe-outside);bottom:var(--safe-bottom);left:var(--safe-inside);border:1px dashed rgb(211 96 85 / .9)}.book-designer-print-guides .content{position:absolute;top:var(--header-total);right:var(--page-outside);bottom:var(--footer-total);left:var(--page-inside);border:1px dashed rgb(70 135 214 / .9)}.book-designer-print-guides .header{position:absolute;top:var(--header-gap);right:var(--page-outside);left:var(--page-inside);height:calc(var(--header-total) - var(--header-gap));border-top:1px dotted rgb(181 130 44 / .9);border-bottom:1px dotted rgb(181 130 44 / .9)}.book-designer-print-guides .footer{position:absolute;right:var(--page-outside);bottom:var(--footer-gap);left:var(--page-inside);height:calc(var(--footer-total) - var(--footer-gap));border-top:1px dotted rgb(181 130 44 / .9);border-bottom:1px dotted rgb(181 130 44 / .9)}${facingGrid}`;
 		syncMarginGuide(document, null, 0, 0);
 		return;
 	}
@@ -955,19 +981,24 @@ function syncMarginGuide(document: Document, type: 'side' | 'vertical' | null, s
 	if (!existing) document.body.append(guide);
 }
 
-function createPagedPages(document: Document, maximumPages = Number.POSITIVE_INFINITY): void {
+function createPagedPages(document: Document, maximumPages = Number.POSITIVE_INFINITY, printSettings: BookPrintSettings | null = null): void {
 	const book = document.querySelector<HTMLElement>('.book');
 	if (!book) return;
 	const chapters = Array.from(book.querySelectorAll<HTMLElement>(':scope > [data-section-id]'));
 	book.replaceChildren();
-	let page = appendPage(document, book, 0);
+	let page = appendPage(document, book, 0, printSettings);
 	for (const [chapterIndex, chapter] of chapters.entries()) {
 		// A manuscript file is a chapter in the Book Model. Its opening should
 		// always begin on a fresh reader page, even when the prior chapter is
 		// short; this gives page navigation stable, meaningful targets.
 		if (chapterIndex > 0 && page.children.length > 0) {
 			if (book.children.length >= maximumPages) return;
-			page = appendPage(document, book, book.children.length);
+			if (printSettings && shouldInsertRectoBlank(book.children.length, printSettings.chapterStart)) {
+				const blank = appendPage(document, book, book.children.length, printSettings);
+				blank.classList.add('is-blank');
+				if (book.children.length >= maximumPages) return;
+			}
+			page = appendPage(document, book, book.children.length, printSettings);
 		}
 		let fragment = appendChapterFragment(document, page, chapter, true);
 		const remaining = Array.from(chapter.children) as HTMLElement[];
@@ -983,7 +1014,7 @@ function createPagedPages(document: Document, maximumPages = Number.POSITIVE_INF
 			if (fragment.children.length > 1) {
 				child.remove();
 				if (book.children.length >= maximumPages) return;
-				page = appendPage(document, book, book.children.length);
+				page = appendPage(document, book, book.children.length, printSettings);
 				fragment = appendChapterFragment(document, page, chapter, false);
 				remaining.unshift(child);
 				continue;
@@ -992,7 +1023,7 @@ function createPagedPages(document: Document, maximumPages = Number.POSITIVE_INF
 			const remainder = splitBlockAtPageBoundary(document, page, child);
 			if (remainder) {
 				if (book.children.length >= maximumPages) return;
-				page = appendPage(document, book, book.children.length);
+				page = appendPage(document, book, book.children.length, printSettings);
 				fragment = appendChapterFragment(document, page, chapter, false);
 				remaining.unshift(remainder);
 				continue;
@@ -1103,15 +1134,33 @@ function pageContentBottom(document: Document, page: HTMLElement, block: HTMLEle
 	return page.getBoundingClientRect().bottom - paddingBottom - marginBottom - 1;
 }
 
-function appendPage(document: Document, book: HTMLElement, index: number): HTMLElement {
+function appendPage(document: Document, book: HTMLElement, index: number, printSettings: BookPrintSettings | null): HTMLElement {
 	const page = document.createElement('div');
-	page.className = 'book-page';
+	page.className = `book-page ${index % 2 === 0 ? 'is-recto' : 'is-verso'}`;
 	page.dataset.pageIndex = String(index);
-	page.dataset.pageNumber = String(index + 1);
+	const pageNumber = visiblePrintPageNumber(index, 0, printSettings?.pageNumberStart ?? 'initial-page');
+	page.dataset.pageNumber = pageNumber === null ? '' : String(pageNumber);
 	page.dataset.pageSide = index % 2 === 0 ? 'recto · right' : 'verso · left';
 	book.append(page);
 	return page;
 }
+
+function syncPrintMarginGuides(document: Document, settings: BookPrintSettings): void {
+	for (const page of Array.from(document.querySelectorAll<HTMLElement>('.book-page'))) {
+		page.querySelector(':scope > .book-designer-print-guides')?.remove();
+		if (!settings.showMarginGuides) continue;
+		const guides = document.createElement('div');
+		guides.className = 'book-designer-print-guides';
+		for (const className of ['safe', 'content', 'header', 'footer']) {
+			const guide = document.createElement('i');
+			guide.className = className;
+			guides.append(guide);
+		}
+		page.append(guides);
+	}
+}
+
+function printPercent(value: number, total: number): string { return `${Math.max(0, Math.min(49, value / total * 100)).toFixed(4)}%`; }
 
 function appendChapterFragment(document: Document, page: HTMLElement, chapter: HTMLElement, includeIdentity: boolean): HTMLElement {
 	const fragment = document.createElement('section');

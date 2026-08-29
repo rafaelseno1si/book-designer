@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BookProjectStore, emptyProjectRegistry } from './project-store';
 import {
 	BOOK_DESIGNER_PROJECT_FORMAT,
+	BOOK_DESIGNER_PROJECT_FILE_VERSION,
 	ProjectFileValidationError,
 	parseProjectFileJson,
 	serializeProjectFile,
@@ -38,9 +39,23 @@ describe('Book Designer project files', () => {
 			source: { type: 'folder', path: 'Books/Novel' },
 			metadata: { author: 'Author' },
 			design: { themeId: 'modern', chapterStyleId: 'numbered' },
+			print: { trimPresetId: '5.5x8.5', imageMode: 'black-white' },
 			preview: { deviceId: 'imported', importedMockupId: 'reader-a', readerScale: 125 },
 		});
 		expect(parsed.mockups.map((mockup) => mockup.id)).toEqual(['reader-a']);
+	});
+
+	it('writes version 2 and migrates version 1 print output', () => {
+		const value = JSON.parse(serializeProjectFile(projectSnapshot())) as {
+			version: number;
+			project: { print?: unknown; preview: Record<string, unknown> };
+		};
+		expect(value.version).toBe(BOOK_DESIGNER_PROJECT_FILE_VERSION);
+		value.version = 1;
+		delete value.project.print;
+		value.project.preview.printColorMode = 'color';
+		const parsed = parseProjectFileJson(JSON.stringify(value));
+		expect(parsed.project.print).toMatchObject({ imageMode: 'color', trimWidthIn: 5.5, trimHeightIn: 8.5 });
 	});
 
 	it('excludes runtime data, manuscript content, unrelated mockups, and transient navigation', () => {
@@ -71,6 +86,14 @@ describe('Book Designer project files', () => {
 		const value = JSON.parse(serializeProjectFile(projectSnapshot())) as { project: { source: { path: string } } };
 		value.project.source.path = '../Outside';
 		expect(() => parseProjectFileJson(JSON.stringify(value))).toThrow('cannot contain');
+	});
+
+	it('rejects unusable custom print geometry', () => {
+		const value = JSON.parse(serializeProjectFile(projectSnapshot())) as { project: { print: { trimWidthIn: number; contentInsideIn: number; contentOutsideIn: number } } };
+		value.project.print.trimWidthIn = 4;
+		value.project.print.contentInsideIn = 2.5;
+		value.project.print.contentOutsideIn = 2.5;
+		expect(() => parseProjectFileJson(JSON.stringify(value))).toThrow('Content margins must leave usable page width.');
 	});
 
 	it('normalizes safe imported values and resets supplied transient navigation', () => {

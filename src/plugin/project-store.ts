@@ -18,6 +18,13 @@ import {
 	type BookThemeOption,
 	type CustomBookTheme,
 } from './theme-catalog';
+import {
+	DEFAULT_PRINT_SETTINGS,
+	normalizePrintSettings,
+	samePrintSettings,
+	validatePrintSettings,
+	type BookPrintSettings,
+} from './print-settings';
 
 export const THEME_IDS = ['classic', 'modern', 'minimal'] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -64,7 +71,6 @@ export interface BookProjectPreviewState {
 	einkRenderMode: EInkRenderMode;
 	colorSoftTone: ColorSoftTone;
 	publisherFontSettings: boolean;
-	printColorMode: PrintColorMode;
 	printPaginationMode: PrintPaginationMode;
 	printFacingPages: boolean;
 	deviceContentSettings: Record<string, PreviewContentSettings>;
@@ -96,7 +102,6 @@ export interface PreviewContentSettings {
 	colorSoftTone: ColorSoftTone;
 	publisherFontSettings: boolean;
 	/** Print-only controls, also stored per device target. */
-	printColorMode: PrintColorMode;
 	printPaginationMode: PrintPaginationMode;
 	printFacingPages: boolean;
 }
@@ -106,8 +111,6 @@ export const EINK_RENDER_MODES = ['monochrome', 'colorsoft'] as const;
 export type EInkRenderMode = (typeof EINK_RENDER_MODES)[number];
 export const COLORSOFT_TONES = ['standard', 'vivid'] as const;
 export type ColorSoftTone = (typeof COLORSOFT_TONES)[number];
-export const PRINT_COLOR_MODES = ['color', 'black-white'] as const;
-export type PrintColorMode = (typeof PRINT_COLOR_MODES)[number];
 export const PRINT_PAGINATION_MODES = ['fast', 'complete'] as const;
 export type PrintPaginationMode = (typeof PRINT_PAGINATION_MODES)[number];
 export const PREVIEW_MODES = ['continuous', 'paged'] as const;
@@ -120,6 +123,7 @@ export interface BookProject {
 	source: FolderSourceConfig;
 	metadata: BookProjectMetadata;
 	design: BookProjectDesign;
+	print: BookPrintSettings;
 	preview: BookProjectPreviewState;
 }
 export interface BookProjectRegistry {
@@ -135,6 +139,8 @@ export interface ProjectRuntime {
 	renderedHtml: string;
 	error: string | null;
 	previewDesign: BookProjectDesign | null;
+	previewPrintSettings: BookPrintSettings | null;
+	printPageCount: number | null;
 }
 export interface BookProjectSnapshot {
 	registry: BookProjectRegistry;
@@ -171,7 +177,7 @@ export class ProjectIdConflictError extends Error {
 
 export const DEFAULT_PROJECT_METADATA: BookProjectMetadata = { title: '', author: '', language: 'english', publisher: '', isbn: '' };
 export const DEFAULT_PROJECT_DESIGN: BookProjectDesign = { themeId: 'classic', customThemeId: null, typographyScale: 'comfortable', chapterStyleId: 'quiet', firstParagraphStyleId: 'indented', sceneBreakId: 'space' };
-const EMPTY_RUNTIME: ProjectRuntime = { status: 'idle', book: null, renderedHtml: '', error: null, previewDesign: null };
+const EMPTY_RUNTIME: ProjectRuntime = { status: 'idle', book: null, renderedHtml: '', error: null, previewDesign: null, previewPrintSettings: null, printPageCount: null };
 
 export function emptyProjectRegistry(): BookProjectRegistry { return { version: 1, projects: [], activeProjectId: null, mockups: [], themes: [] }; }
 
@@ -232,6 +238,7 @@ export class BookProjectStore {
 		const project: BookProject = {
 			id: this.nextAvailableProjectId(), name, source: { type: 'folder', path: folderPath },
 			metadata: { ...DEFAULT_PROJECT_METADATA, title: folderName }, design: { ...DEFAULT_PROJECT_DESIGN },
+			print: { ...DEFAULT_PRINT_SETTINGS },
 			preview: defaultPreviewState(this.defaultDevice),
 		};
 		this.registry = { ...this.registry, projects: [...this.registry.projects, project], activeProjectId: project.id };
@@ -341,6 +348,23 @@ export class BookProjectStore {
 		this.commit(true);
 	}
 	updateDesign(design: Partial<BookProjectDesign>): void { this.updateActive((project) => ({ ...project, design: { ...project.design, ...design } }), true); }
+	updatePrintSettings(settings: BookPrintSettings): void {
+		const normalized = normalizePrintSettings(settings);
+		const errors = validatePrintSettings(normalized);
+		if (errors.length > 0) throw new Error(errors[0]);
+		this.runtime = { ...this.runtime, previewPrintSettings: this.runtime.previewPrintSettings ? normalized : null, printPageCount: null };
+		this.updateActive((project) => ({ ...project, print: normalized, preview: { ...project.preview, pageIndex: 0 } }), false);
+	}
+	setPrintSettingsPreview(settings: BookPrintSettings | null): void {
+		const next = settings ? normalizePrintSettings(settings) : null;
+		if (next && validatePrintSettings(next).length > 0) return;
+		if (sameNullablePrintSettings(this.runtime.previewPrintSettings, next)) return;
+		this.runtime = { ...this.runtime, previewPrintSettings: next ? { ...next } : null, printPageCount: null };
+		this.commit(false);
+	}
+	setPrintMarginGuides(showMarginGuides: boolean): void {
+		this.updateActive((project) => ({ ...project, print: { ...project.print, showMarginGuides } }), false);
+	}
 	getThemeOptions(): BookThemeOption[] {
 		return themeOptions(this.registry.themes);
 	}
@@ -391,7 +415,7 @@ export class BookProjectStore {
 			const hasContentChange = preview.readerScale !== undefined || preview.contentWidth !== undefined || preview.contentHeight !== undefined || preview.frameColor !== undefined
 				|| preview.displayTheme !== undefined || preview.brightness !== undefined || preview.warmth !== undefined
 				|| preview.einkRenderMode !== undefined || preview.colorSoftTone !== undefined || preview.publisherFontSettings !== undefined
-				|| preview.printColorMode !== undefined || preview.printPaginationMode !== undefined || preview.printFacingPages !== undefined;
+				|| preview.printPaginationMode !== undefined || preview.printFacingPages !== undefined;
 			const target = hasContentChange
 				? normalizeContentSettings({ ...contentSettingsFromPreview(next), ...preview })
 				: settings[targetKey] ?? defaultPreviewContentSettings(next.deviceId);
@@ -451,8 +475,16 @@ export class BookProjectStore {
 	setRuntimeBook(projectId: string, book: Book): void {
 		if (this.registry.activeProjectId !== projectId) return;
 		const previewDesign = this.runtime.previewDesign;
-		this.runtime = book.sections.length === 0 ? { ...EMPTY_RUNTIME, status: 'empty', book, previewDesign } : { status: 'ready', book, renderedHtml: '', error: null, previewDesign };
+		const previewPrintSettings = this.runtime.previewPrintSettings;
+		this.runtime = book.sections.length === 0 ? { ...EMPTY_RUNTIME, status: 'empty', book, previewDesign, previewPrintSettings } : { status: 'ready', book, renderedHtml: '', error: null, previewDesign, previewPrintSettings, printPageCount: null };
 		this.refreshRenderedHtml();
+		this.commit(false);
+	}
+	setPrintPageCount(projectId: string, pageCount: number | null): void {
+		if (this.registry.activeProjectId !== projectId) return;
+		const normalized = typeof pageCount === 'number' && Number.isInteger(pageCount) && pageCount > 0 ? pageCount : null;
+		if (this.runtime.printPageCount === normalized) return;
+		this.runtime = { ...this.runtime, printPageCount: normalized };
 		this.commit(false);
 	}
 	setRuntimeError(projectId: string, error: unknown): void {
@@ -499,7 +531,7 @@ export class BookProjectStore {
 		return {
 			registry: cloneRegistry(this.registry),
 			activeProject: cloneProject(this.activeProject),
-			runtime: { ...this.runtime, previewDesign: this.runtime.previewDesign ? { ...this.runtime.previewDesign } : null },
+			runtime: { ...this.runtime, previewDesign: this.runtime.previewDesign ? { ...this.runtime.previewDesign } : null, previewPrintSettings: this.runtime.previewPrintSettings ? { ...this.runtime.previewPrintSettings } : null },
 			revision: this.revision,
 		};
 	}
@@ -523,7 +555,7 @@ function normalizeProject(value: unknown, defaultDevice: PreviewDeviceId): BookP
 	const preview = isRecord(value.preview) ? value.preview : {};
 	return [{ id: value.id, name: value.name, source: { type: 'folder', path: value.source.path }, metadata: {
 		title: stringOr(metadata.title, ''), author: stringOr(metadata.author, ''), language: stringOr(metadata.language, 'english'), publisher: stringOr(metadata.publisher, ''), isbn: stringOr(metadata.isbn, ''),
-	}, design: normalizeProjectDesign(design), preview: normalizePreviewState(preview, defaultDevice) }];
+	}, design: normalizeProjectDesign(design), print: normalizePrintSettings(value.print, preview.printColorMode), preview: normalizePreviewState(preview, defaultDevice) }];
 }
 function normalizeProjectDesign(design: Record<string, unknown>): BookProjectDesign {
 	const themeId = stringOr(design.themeId, '');
@@ -556,7 +588,6 @@ const DEFAULT_PREVIEW_CONTENT_SETTINGS: PreviewContentSettings = {
 	einkRenderMode: 'monochrome',
 	colorSoftTone: 'standard',
 	publisherFontSettings: true,
-	printColorMode: 'color',
 	printPaginationMode: 'fast',
 	printFacingPages: false,
 };
@@ -575,7 +606,6 @@ function contentSettingsFromPreview(preview: Pick<BookProjectPreviewState, keyof
 		einkRenderMode: preview.einkRenderMode,
 		colorSoftTone: preview.colorSoftTone,
 		publisherFontSettings: preview.publisherFontSettings,
-		printColorMode: preview.printColorMode,
 		printPaginationMode: preview.printPaginationMode,
 		printFacingPages: preview.printFacingPages,
 	};
@@ -592,7 +622,6 @@ function normalizeContentSettings(value: Record<string, unknown> | PreviewConten
 		einkRenderMode: isEInkRenderMode(value.einkRenderMode) ? value.einkRenderMode : 'monochrome',
 		colorSoftTone: isColorSoftTone(value.colorSoftTone) ? value.colorSoftTone : 'standard',
 		publisherFontSettings: typeof value.publisherFontSettings === 'boolean' ? value.publisherFontSettings : true,
-		printColorMode: isPrintColorMode(value.printColorMode) ? value.printColorMode : 'color',
 		printPaginationMode: isPrintPaginationMode(value.printPaginationMode) ? value.printPaginationMode : 'fast',
 		printFacingPages: typeof value.printFacingPages === 'boolean' ? value.printFacingPages : false,
 	};
@@ -600,7 +629,6 @@ function normalizeContentSettings(value: Record<string, unknown> | PreviewConten
 function isDisplayTheme(value: unknown): value is DisplayTheme { return typeof value === 'string' && DISPLAY_THEMES.includes(value as DisplayTheme); }
 function isEInkRenderMode(value: unknown): value is EInkRenderMode { return typeof value === 'string' && EINK_RENDER_MODES.includes(value as EInkRenderMode); }
 function isColorSoftTone(value: unknown): value is ColorSoftTone { return typeof value === 'string' && COLORSOFT_TONES.includes(value as ColorSoftTone); }
-function isPrintColorMode(value: unknown): value is PrintColorMode { return typeof value === 'string' && PRINT_COLOR_MODES.includes(value as PrintColorMode); }
 function isPrintPaginationMode(value: unknown): value is PrintPaginationMode { return typeof value === 'string' && PRINT_PAGINATION_MODES.includes(value as PrintPaginationMode); }
 function validPercentage(value: unknown, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100 ? Math.round(value) : fallback; }
 function validFrameColor(value: unknown): string { return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : DEFAULT_PREVIEW_CONTENT_SETTINGS.frameColor; }
@@ -702,7 +730,7 @@ function normalizeImportedMockupPostures(value: unknown): ImportedHtmlMockup['po
 	return postures[0]?.id === 'unfold' && postures.every((posture, index) => posture.id === (index === 0 ? 'unfold' : `fold${index}`)) ? postures : [];
 }
 function withoutKey<T>(value: Record<string, T>, key: string): Record<string, T> { const { [key]: _, ...remaining } = value; return remaining; }
-function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, preview: { ...project.preview, mockupPostures: { ...project.preview.mockupPostures }, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
+function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, print: { ...project.print }, preview: { ...project.preview, mockupPostures: { ...project.preview.mockupPostures }, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
 function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup {
 	return { ...mockup, color: { ...mockup.color }, display: { ...mockup.display }, postures: mockup.postures.map((posture) => ({ ...posture, frame: posture.frame ? { ...posture.frame } : null })) };
 }
@@ -823,6 +851,9 @@ function sameDesign(left: BookProjectDesign | null, right: BookProjectDesign | n
 		&& left.chapterStyleId === right.chapterStyleId
 		&& left.firstParagraphStyleId === right.firstParagraphStyleId
 		&& left.sceneBreakId === right.sceneBreakId);
+}
+function sameNullablePrintSettings(left: BookPrintSettings | null, right: BookPrintSettings | null): boolean {
+	return left === right || Boolean(left && right && samePrintSettings(left, right));
 }
 function defaultProjectIdWithSuffix(used: Set<string>): string {
 	const base = defaultProjectId();
