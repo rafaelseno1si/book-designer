@@ -11,6 +11,13 @@ import { renderBookPreviewDocument } from '../core/renderer/book-preview-rendere
 import type { FolderSourceConfig } from '../core/sources/folder-source-adapter';
 import type { PreviewDeviceId } from './settings';
 import { MOTOROLA_RAZR_ID, MOTOROLA_RAZR_MOCKUP } from '../core/mockups/motorola-razr-mockup';
+import {
+	BUILT_IN_THEME_OPTIONS,
+	findThemeOption,
+	themeOptions,
+	type BookThemeOption,
+	type CustomBookTheme,
+} from './theme-catalog';
 
 export const THEME_IDS = ['classic', 'modern', 'minimal'] as const;
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -32,11 +39,17 @@ export type SceneBreakId = (typeof SCENE_BREAK_IDS)[number];
 export const SCENE_BREAK_LABELS: Record<SceneBreakId, string> = { space: 'Space', asterisks: 'Asterisks', ornament: 'Ornament' };
 export function isSceneBreakId(value: string): value is SceneBreakId { return SCENE_BREAK_IDS.some((id) => id === value); }
 
+export const FIRST_PARAGRAPH_STYLE_IDS = ['indented', 'flush', 'drop-cap'] as const;
+export type FirstParagraphStyleId = (typeof FIRST_PARAGRAPH_STYLE_IDS)[number];
+export function isFirstParagraphStyleId(value: string): value is FirstParagraphStyleId { return FIRST_PARAGRAPH_STYLE_IDS.some((id) => id === value); }
+
 export type BookProjectMetadata = BookMetadata;
 export interface BookProjectDesign {
 	themeId: ThemeId;
+	customThemeId: string | null;
 	typographyScale: TypographyScale;
 	chapterStyleId: ChapterStyleId;
+	firstParagraphStyleId: FirstParagraphStyleId;
 	sceneBreakId: SceneBreakId;
 }
 export interface BookProjectPreviewState {
@@ -114,12 +127,14 @@ export interface BookProjectRegistry {
 	projects: BookProject[];
 	activeProjectId: string | null;
 	mockups: ImportedHtmlMockup[];
+	themes: CustomBookTheme[];
 }
 export interface ProjectRuntime {
 	status: 'idle' | 'loading' | 'ready' | 'empty' | 'error';
 	book: Book | null;
 	renderedHtml: string;
 	error: string | null;
+	previewDesign: BookProjectDesign | null;
 }
 export interface BookProjectSnapshot {
 	registry: BookProjectRegistry;
@@ -155,16 +170,17 @@ export class ProjectIdConflictError extends Error {
 }
 
 export const DEFAULT_PROJECT_METADATA: BookProjectMetadata = { title: '', author: '', language: 'english', publisher: '', isbn: '' };
-export const DEFAULT_PROJECT_DESIGN: BookProjectDesign = { themeId: 'classic', typographyScale: 'comfortable', chapterStyleId: 'quiet', sceneBreakId: 'space' };
-const EMPTY_RUNTIME: ProjectRuntime = { status: 'idle', book: null, renderedHtml: '', error: null };
+export const DEFAULT_PROJECT_DESIGN: BookProjectDesign = { themeId: 'classic', customThemeId: null, typographyScale: 'comfortable', chapterStyleId: 'quiet', firstParagraphStyleId: 'indented', sceneBreakId: 'space' };
+const EMPTY_RUNTIME: ProjectRuntime = { status: 'idle', book: null, renderedHtml: '', error: null, previewDesign: null };
 
-export function emptyProjectRegistry(): BookProjectRegistry { return { version: 1, projects: [], activeProjectId: null, mockups: [] }; }
+export function emptyProjectRegistry(): BookProjectRegistry { return { version: 1, projects: [], activeProjectId: null, mockups: [], themes: [] }; }
 
 export function normalizeProjectRegistry(value: unknown, defaultDevice: PreviewDeviceId): BookProjectRegistry {
 	if (!isRecord(value) || !Array.isArray(value.projects)) return emptyProjectRegistry();
 	const rawProjects: unknown[] = value.projects;
 	const projects = rawProjects.flatMap((candidate) => normalizeProject(candidate, defaultDevice));
 	const mockups = normalizeImportedMockups(value.mockups);
+	const themes = normalizeCustomThemes(value.themes);
 	// Phase 1 initially embedded a single imported mockup in each project. Pull
 	// those legacy entries into the shared library on the next save instead of
 	// losing users' existing device frames.
@@ -183,7 +199,10 @@ export function normalizeProjectRegistry(value: unknown, defaultDevice: PreviewD
 		}
 	}
 	const requestedId = typeof value.activeProjectId === 'string' ? value.activeProjectId : null;
-	return { version: 1, projects, mockups, activeProjectId: projects.some((project) => project.id === requestedId) ? requestedId : projects[0]?.id ?? null };
+	for (const project of projects) {
+		if (project.design.customThemeId && !themes.some((theme) => theme.id === project.design.customThemeId)) project.design.customThemeId = null;
+	}
+	return { version: 1, projects, mockups, themes, activeProjectId: projects.some((project) => project.id === requestedId) ? requestedId : projects[0]?.id ?? null };
 }
 
 export class BookProjectStore {
@@ -274,25 +293,30 @@ export class BookProjectStore {
 		return this.registry.projects.some((project) => project.id === projectId);
 	}
 
-	getProjectSnapshot(projectId: string): { project: BookProject; mockups: ImportedHtmlMockup[] } | null {
+	getProjectSnapshot(projectId: string): { project: BookProject; mockups: ImportedHtmlMockup[]; themes: CustomBookTheme[] } | null {
 		const project = this.registry.projects.find((candidate) => candidate.id === projectId);
 		if (!project) return null;
 		const referencedIds = projectMockupIds(project);
 		return {
 			project: cloneProject(project) as BookProject,
 			mockups: this.registry.mockups.filter((mockup) => referencedIds.has(mockup.id)).map(cloneImportedMockup),
+			themes: project.design.customThemeId
+				? this.registry.themes.filter((theme) => theme.id === project.design.customThemeId).map(cloneCustomTheme)
+				: [],
 		};
 	}
 
 	importProject(
 		incomingProject: BookProject,
 		incomingMockups: ImportedHtmlMockup[],
+		incomingThemes: CustomBookTheme[] = [],
 		collisionStrategy: ProjectImportCollisionStrategy = 'reject',
 	): BookProject {
 		const conflicts = this.hasProject(incomingProject.id);
 		if (conflicts && collisionStrategy === 'reject') throw new ProjectIdConflictError(incomingProject.id);
 		const merged = mergeImportedMockups(this.registry.mockups, incomingMockups, incomingProject);
-		const project = merged.project;
+		const themeMerge = mergeCustomThemes(this.registry.themes, incomingThemes, merged.project);
+		const project = themeMerge.project;
 		if (conflicts && collisionStrategy === 'copy') project.id = this.nextAvailableProjectId();
 		const nameCandidates = this.registry.projects.filter((candidate) => !(conflicts && collisionStrategy === 'replace' && candidate.id === project.id));
 		project.name = nextProjectName(project.name.trim() || 'Imported project', nameCandidates);
@@ -300,7 +324,7 @@ export class BookProjectStore {
 		const projects = conflicts && collisionStrategy === 'replace'
 			? this.registry.projects.map((candidate) => candidate.id === project.id ? project : candidate)
 			: [...this.registry.projects, project];
-		this.registry = { ...this.registry, projects, mockups: merged.mockups, activeProjectId: project.id };
+		this.registry = { ...this.registry, projects, mockups: merged.mockups, themes: themeMerge.themes, activeProjectId: project.id };
 		this.runtime = { ...EMPTY_RUNTIME, status: 'loading' };
 		this.commit(true);
 		return cloneProject(project) as BookProject;
@@ -317,6 +341,46 @@ export class BookProjectStore {
 		this.commit(true);
 	}
 	updateDesign(design: Partial<BookProjectDesign>): void { this.updateActive((project) => ({ ...project, design: { ...project.design, ...design } }), true); }
+	getThemeOptions(): BookThemeOption[] {
+		return themeOptions(this.registry.themes);
+	}
+	duplicateTheme(sourceThemeId: string): CustomBookTheme {
+		const source = findThemeOption(sourceThemeId, this.registry.themes);
+		if (!source) throw new Error('That theme no longer exists.');
+		const id = nextCustomThemeId(new Set(this.registry.themes.map((theme) => theme.id)));
+		const theme: CustomBookTheme = {
+			id,
+			name: nextThemeName(`${source.name} copy`, this.registry.themes),
+			baseThemeId: source.design.themeId,
+			design: { ...source.design, customThemeId: id },
+		};
+		this.registry = { ...this.registry, themes: [...this.registry.themes, theme] };
+		this.commit(true);
+		return cloneCustomTheme(theme);
+	}
+	updateCustomTheme(themeId: string, update: { name?: string; design?: Partial<BookProjectDesign> }): CustomBookTheme {
+		const existing = this.registry.themes.find((theme) => theme.id === themeId);
+		if (!existing) throw new Error('That custom theme no longer exists.');
+		const name = update.name === undefined ? existing.name : validatedThemeName(update.name, this.registry.themes, themeId);
+		const design = update.design ? { ...existing.design, ...update.design, customThemeId: themeId } : existing.design;
+		const theme: CustomBookTheme = { ...existing, name, baseThemeId: design.themeId, design };
+		this.registry = { ...this.registry, themes: this.registry.themes.map((candidate) => candidate.id === themeId ? theme : candidate) };
+		this.commit(true);
+		return cloneCustomTheme(theme);
+	}
+	applyTheme(themeId: string): void {
+		const theme = findThemeOption(themeId, this.registry.themes);
+		if (!theme) return;
+		this.runtime = { ...this.runtime, previewDesign: null };
+		this.updateActive((project) => ({ ...project, design: { ...theme.design } }), true);
+	}
+	setDesignPreview(design: BookProjectDesign | null): void {
+		const next = design ? { ...design } : null;
+		if (sameDesign(this.runtime.previewDesign, next)) return;
+		this.runtime = { ...this.runtime, previewDesign: next };
+		this.refreshRenderedHtml();
+		this.commit(false);
+	}
 	updatePreview(preview: Partial<BookProjectPreviewState>): void {
 		this.updateActive((project) => {
 			const previous = project.preview;
@@ -386,7 +450,8 @@ export class BookProjectStore {
 	}
 	setRuntimeBook(projectId: string, book: Book): void {
 		if (this.registry.activeProjectId !== projectId) return;
-		this.runtime = book.sections.length === 0 ? { ...EMPTY_RUNTIME, status: 'empty', book } : { status: 'ready', book, renderedHtml: '', error: null };
+		const previewDesign = this.runtime.previewDesign;
+		this.runtime = book.sections.length === 0 ? { ...EMPTY_RUNTIME, status: 'empty', book, previewDesign } : { status: 'ready', book, renderedHtml: '', error: null, previewDesign };
 		this.refreshRenderedHtml();
 		this.commit(false);
 	}
@@ -422,7 +487,7 @@ export class BookProjectStore {
 	private refreshRenderedHtml(): void {
 		const project = this.activeProject;
 		if (!project || !this.runtime.book) return;
-		this.runtime = { ...this.runtime, renderedHtml: renderBookPreviewDocument(this.runtime.book, project.design, project.preview.readerScale) };
+		this.runtime = { ...this.runtime, renderedHtml: renderBookPreviewDocument(this.runtime.book, this.runtime.previewDesign ?? project.design, project.preview.readerScale) };
 	}
 	private commit(shouldPersist: boolean): void {
 		this.revision += 1;
@@ -434,7 +499,7 @@ export class BookProjectStore {
 		return {
 			registry: cloneRegistry(this.registry),
 			activeProject: cloneProject(this.activeProject),
-			runtime: { ...this.runtime },
+			runtime: { ...this.runtime, previewDesign: this.runtime.previewDesign ? { ...this.runtime.previewDesign } : null },
 			revision: this.revision,
 		};
 	}
@@ -445,7 +510,7 @@ export function renderPreviewState(snapshot: BookProjectSnapshot): PreviewRender
 	const project = snapshot.activeProject;
 	return {
 		title: project?.metadata.title.trim() || 'Untitled book', author: project?.metadata.author.trim() || 'Unknown author',
-		themeLabel: project ? THEME_LABELS[project.design.themeId] : '', typographyLabel: project ? TYPOGRAPHY_SCALE_LABELS[project.design.typographyScale] : '',
+		themeLabel: project ? findThemeOption(project.design.customThemeId ?? project.design.themeId, snapshot.registry.themes)?.name ?? THEME_LABELS[project.design.themeId] : '', typographyLabel: project ? TYPOGRAPHY_SCALE_LABELS[project.design.typographyScale] : '',
 		chapterStyleLabel: project ? CHAPTER_STYLE_LABELS[project.design.chapterStyleId] : '', sceneBreakLabel: project ? SCENE_BREAK_LABELS[project.design.sceneBreakId] : '',
 		hasManuscript: snapshot.runtime.status === 'ready', revision: snapshot.revision,
 	};
@@ -456,15 +521,24 @@ function normalizeProject(value: unknown, defaultDevice: PreviewDeviceId): BookP
 	const metadata = isRecord(value.metadata) ? value.metadata : {};
 	const design = isRecord(value.design) ? value.design : {};
 	const preview = isRecord(value.preview) ? value.preview : {};
+	return [{ id: value.id, name: value.name, source: { type: 'folder', path: value.source.path }, metadata: {
+		title: stringOr(metadata.title, ''), author: stringOr(metadata.author, ''), language: stringOr(metadata.language, 'english'), publisher: stringOr(metadata.publisher, ''), isbn: stringOr(metadata.isbn, ''),
+	}, design: normalizeProjectDesign(design), preview: normalizePreviewState(preview, defaultDevice) }];
+}
+function normalizeProjectDesign(design: Record<string, unknown>): BookProjectDesign {
 	const themeId = stringOr(design.themeId, '');
 	const typographyScale = stringOr(design.typographyScale, '');
 	const chapterStyleId = stringOr(design.chapterStyleId, '');
+	const firstParagraphStyleId = stringOr(design.firstParagraphStyleId, '');
 	const sceneBreakId = stringOr(design.sceneBreakId, '');
-	return [{ id: value.id, name: value.name, source: { type: 'folder', path: value.source.path }, metadata: {
-		title: stringOr(metadata.title, ''), author: stringOr(metadata.author, ''), language: stringOr(metadata.language, 'english'), publisher: stringOr(metadata.publisher, ''), isbn: stringOr(metadata.isbn, ''),
-	}, design: {
-		themeId: isThemeId(themeId) ? themeId : 'classic', typographyScale: isTypographyScale(typographyScale) ? typographyScale : 'comfortable', chapterStyleId: isChapterStyleId(chapterStyleId) ? chapterStyleId : 'quiet', sceneBreakId: isSceneBreakId(sceneBreakId) ? sceneBreakId : 'space',
-	}, preview: normalizePreviewState(preview, defaultDevice) }];
+	return {
+		themeId: isThemeId(themeId) ? themeId : 'classic',
+		customThemeId: typeof design.customThemeId === 'string' && validCustomThemeId(design.customThemeId) ? design.customThemeId : null,
+		typographyScale: isTypographyScale(typographyScale) ? typographyScale : 'comfortable',
+		chapterStyleId: isChapterStyleId(chapterStyleId) ? chapterStyleId : 'quiet',
+		firstParagraphStyleId: isFirstParagraphStyleId(firstParagraphStyleId) ? firstParagraphStyleId : 'indented',
+		sceneBreakId: isSceneBreakId(sceneBreakId) ? sceneBreakId : 'space',
+	};
 }
 function isPreviewDevice(value: unknown): value is PreviewDeviceId { return typeof value === 'string' && ['phone-narrow', 'phone', 'ereader-6', 'ereader-large', 'tablet', 'custom', 'kindle-paperwhite', MOTOROLA_RAZR_ID, 'print', 'imported'].includes(value); }
 function isPreviewMode(value: unknown): value is PreviewMode { return value === 'continuous' || value === 'paged'; }
@@ -597,6 +671,17 @@ function normalizeImportedMockups(value: unknown): ImportedHtmlMockup[] {
 		return [mockup];
 	});
 }
+function normalizeCustomThemes(value: unknown): CustomBookTheme[] {
+	if (!Array.isArray(value)) return [];
+	const seen = new Set<string>();
+	return value.flatMap((candidate) => {
+		if (!isRecord(candidate) || typeof candidate.id !== 'string' || !validCustomThemeId(candidate.id) || seen.has(candidate.id)
+			|| typeof candidate.name !== 'string' || !candidate.name.trim() || candidate.name.length > 200 || !isRecord(candidate.design)) return [];
+		const design = normalizeProjectDesign(candidate.design);
+		seen.add(candidate.id);
+		return [{ id: candidate.id, name: candidate.name.trim(), baseThemeId: design.themeId, design: { ...design, customThemeId: candidate.id } }];
+	});
+}
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
 function normalizeMockupPostures(value: unknown): Record<string, string> {
 	if (!isRecord(value)) return {};
@@ -621,7 +706,8 @@ function cloneProject(project: BookProject | null): BookProject | null { return 
 function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup {
 	return { ...mockup, color: { ...mockup.color }, display: { ...mockup.display }, postures: mockup.postures.map((posture) => ({ ...posture, frame: posture.frame ? { ...posture.frame } : null })) };
 }
-function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup) }; }
+function cloneCustomTheme(theme: CustomBookTheme): CustomBookTheme { return { ...theme, design: { ...theme.design } }; }
+function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup), themes: registry.themes.map(cloneCustomTheme) }; }
 function resetTransientPreview(preview: BookProjectPreviewState): BookProjectPreviewState {
 	return { ...preview, pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
@@ -671,6 +757,27 @@ function remapProjectMockups(project: BookProject, idMap: Map<string, string>): 
 	}));
 	return { ...cloned, preview: { ...cloned.preview, importedMockupId, mockupPostures, deviceContentSettings } };
 }
+function mergeCustomThemes(
+	existingThemes: CustomBookTheme[],
+	incomingThemes: CustomBookTheme[],
+	incomingProject: BookProject,
+): { project: BookProject; themes: CustomBookTheme[] } {
+	const themes = existingThemes.map(cloneCustomTheme);
+	let project = cloneProject(incomingProject) as BookProject;
+	for (const incoming of incomingThemes) {
+		const existing = themes.find((theme) => theme.id === incoming.id);
+		if (!existing) {
+			themes.push(cloneCustomTheme(incoming));
+			continue;
+		}
+		if (sameDesign(existing.design, incoming.design) && existing.name === incoming.name) continue;
+		const id = nextCustomThemeId(new Set(themes.map((theme) => theme.id)));
+		const remapped = { ...cloneCustomTheme(incoming), id, design: { ...incoming.design, customThemeId: id } };
+		themes.push(remapped);
+		if (project.design.customThemeId === incoming.id) project = { ...project, design: { ...project.design, customThemeId: id } };
+	}
+	return { project, themes };
+}
 function nextImportedMockupId(baseId: string, used: Set<string>): string {
 	for (let suffix = 2; ; suffix += 1) {
 		const candidate = `${baseId}-imported-${suffix}`;
@@ -684,6 +791,38 @@ function nextProjectName(folderName: string, projects: BookProject[]): string {
 		const candidate = `${folderName} ${suffix}`;
 		if (!used.has(candidate.toLocaleLowerCase())) return candidate;
 	}
+}
+function nextThemeName(requestedName: string, themes: CustomBookTheme[]): string {
+	const used = new Set([...BUILT_IN_THEME_OPTIONS.map((theme) => theme.name), ...themes.map((theme) => theme.name)].map((name) => name.toLocaleLowerCase()));
+	if (!used.has(requestedName.toLocaleLowerCase())) return requestedName;
+	for (let suffix = 2; ; suffix += 1) {
+		const candidate = `${requestedName} ${suffix}`;
+		if (!used.has(candidate.toLocaleLowerCase())) return candidate;
+	}
+}
+function validatedThemeName(requestedName: string, themes: CustomBookTheme[], excludedThemeId: string): string {
+	const name = requestedName.trim();
+	if (!name || name.length > 200 || containsControlCharacter(name)) throw new ProjectNameValidationError('Use a non-empty theme name of 200 characters or fewer.');
+	const duplicate = [...BUILT_IN_THEME_OPTIONS.map((theme) => ({ id: theme.id, name: theme.name })), ...themes]
+		.some((theme) => theme.id !== excludedThemeId && theme.name.localeCompare(name, undefined, { sensitivity: 'base' }) === 0);
+	if (duplicate) throw new ProjectNameValidationError(`A theme named "${name}" already exists.`);
+	return name;
+}
+function nextCustomThemeId(used: Set<string>): string {
+	for (;;) {
+		const candidate = `theme-${defaultProjectId()}`;
+		if (!used.has(candidate)) return candidate;
+	}
+}
+function validCustomThemeId(value: string): boolean { return /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,199}$/.test(value); }
+function sameDesign(left: BookProjectDesign | null, right: BookProjectDesign | null): boolean {
+	return left === right || Boolean(left && right
+		&& left.themeId === right.themeId
+		&& left.customThemeId === right.customThemeId
+		&& left.typographyScale === right.typographyScale
+		&& left.chapterStyleId === right.chapterStyleId
+		&& left.firstParagraphStyleId === right.firstParagraphStyleId
+		&& left.sceneBreakId === right.sceneBreakId);
 }
 function defaultProjectIdWithSuffix(used: Set<string>): string {
 	const base = defaultProjectId();

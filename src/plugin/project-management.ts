@@ -69,7 +69,7 @@ export class ProjectManagementService implements ProjectManagementActions {
 				if (choice === 'cancel') return;
 				strategy = choice;
 			}
-			const project = this.store.importProject(parsed.project, parsed.mockups, strategy);
+			const project = this.store.importProject(parsed.project, parsed.mockups, parsed.themes, strategy);
 			const folderExists = project.source.path === '' || this.app.vault.getAbstractFileByPath(project.source.path) instanceof TFolder;
 			if (!folderExists) {
 				new Notice(`Imported “${project.name}”, but “${project.source.path}” is not in this vault. Create that folder before opening Preview.`, 10_000);

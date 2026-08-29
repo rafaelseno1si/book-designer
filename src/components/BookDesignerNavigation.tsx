@@ -2,15 +2,19 @@ import { ObsidianIcon } from './ObsidianIcon';
 
 interface BookDesignerNavigationProps {
 	collapsed: boolean;
+	activeSection: 'project-file' | 'themes';
 	canOpenPreview: boolean;
 	onToggleCollapsed: () => void;
+	onSelectSection: (section: 'project-file' | 'themes') => void;
 	onOpenPreview: () => void;
 }
 
 export function BookDesignerNavigation({
 	collapsed,
+	activeSection,
 	canOpenPreview,
 	onToggleCollapsed,
+	onSelectSection,
 	onOpenPreview,
 }: BookDesignerNavigationProps) {
 	const collapseLabel = collapsed ? 'Expand navigation' : 'Collapse navigation';
@@ -35,13 +39,25 @@ export function BookDesignerNavigation({
 			<nav className="book-designer-menu" aria-label="Book Designer sections">
 				<button
 					type="button"
-					className="book-designer-menu-item is-selected"
-					aria-current="page"
+					className={`book-designer-menu-item${activeSection === 'project-file' ? ' is-selected' : ''}`}
+					aria-current={activeSection === 'project-file' ? 'page' : undefined}
 					aria-label="Project file"
 					title={collapsed ? 'Project file' : undefined}
+					onClick={() => onSelectSection('project-file')}
 				>
 					<ObsidianIcon name="file-cog" />
 					<span>Project file</span>
+				</button>
+				<button
+					type="button"
+					className={`book-designer-menu-item${activeSection === 'themes' ? ' is-selected' : ''}`}
+					aria-current={activeSection === 'themes' ? 'page' : undefined}
+					aria-label="Themes"
+					title={collapsed ? 'Themes' : undefined}
+					onClick={() => onSelectSection('themes')}
+				>
+					<ObsidianIcon name="palette" />
+					<span>Themes</span>
 				</button>
 				<button
 					type="button"

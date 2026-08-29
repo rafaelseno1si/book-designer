@@ -5,6 +5,9 @@ Book Designer is an Obsidian community plugin for visually designing and preview
 The plugin currently provides:
 
 - A restrained **Book Designer** project-management workspace with a collapsible navigation rail
+- A searchable, paginated **Themes** workspace with responsive chapter-preview cards
+- Non-persistent hover/selection previews shared with the separate Preview tab
+- Persistent custom theme duplicates with modular chapter opening, first paragraph, typography, and ornamental-break presets
 - Folder-backed projects with automatic internal persistence through Obsidian plugin data
 - Create, select, rename, duplicate with **Save as**, and delete operations that never modify manuscript notes
 - Portable `.book-designer.json` import/export for one project configuration
@@ -13,6 +16,8 @@ The plugin currently provides:
 - Browser-compatible TypeScript and vault API I/O for desktop and mobile Obsidian
 
 The Designer intentionally contains project management rather than book design controls. Existing metadata, design, and durable Preview settings remain part of each project and continue to drive Preview.
+
+The **Themes** section is the focused design surface. Hovering a theme or element preset temporarily overrides the Preview tab without changing the project. Selecting keeps that temporary preview active while other choices are hovered. **Apply** persists the selected theme or preset; **Cancel** restores the book's applied design. **Edit duplicate** creates a custom theme copy before opening the modular element editor.
 
 ## Project persistence and files
 

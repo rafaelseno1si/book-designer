@@ -91,4 +91,19 @@ describe('Book Designer project files', () => {
 		if (value.mockups[0]) value.mockups[0].html = '<script>alert(1)</script><div data-book-designer-screen></div>';
 		expect(() => parseProjectFileJson(JSON.stringify(value))).toThrow('unsafe HTML');
 	});
+
+	it('round-trips the custom theme referenced by the project', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-theme');
+		store.createProject('Books/Theme Novel', 'Theme Novel');
+		const custom = store.duplicateTheme('minimal');
+		store.updateCustomTheme(custom.id, { design: { firstParagraphStyleId: 'drop-cap' } });
+		store.applyTheme(custom.id);
+		const snapshot = store.getProjectSnapshot('project-theme');
+		if (!snapshot) throw new Error('Expected the themed project snapshot.');
+
+		const parsed = parseProjectFileJson(serializeProjectFile(snapshot));
+		expect(parsed.project.design.customThemeId).toBe(custom.id);
+		expect(parsed.themes.map((theme) => theme.id)).toEqual([custom.id]);
+		expect(parsed.themes[0]?.design.firstParagraphStyleId).toBe('drop-cap');
+	});
 });

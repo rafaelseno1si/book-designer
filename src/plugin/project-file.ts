@@ -13,6 +13,7 @@ import {
 	type BookProject,
 	type BookProjectPreviewState,
 } from './project-store';
+import type { CustomBookTheme } from './theme-catalog';
 
 export const BOOK_DESIGNER_PROJECT_FORMAT = 'book-designer-project';
 export const BOOK_DESIGNER_PROJECT_FILE_VERSION = 1;
@@ -40,11 +41,13 @@ export interface BookDesignerProjectFileV1 {
 	version: typeof BOOK_DESIGNER_PROJECT_FILE_VERSION;
 	project: PortableBookProject;
 	mockups: ImportedHtmlMockup[];
+	themes: CustomBookTheme[];
 }
 
 export interface ProjectExportSnapshot {
 	project: BookProject;
 	mockups: ImportedHtmlMockup[];
+	themes: CustomBookTheme[];
 }
 
 export class ProjectFileValidationError extends Error {
@@ -66,6 +69,10 @@ export function serializeProjectFile(snapshot: ProjectExportSnapshot): string {
 		version: BOOK_DESIGNER_PROJECT_FILE_VERSION,
 		project,
 		mockups,
+		themes: snapshot.themes
+			.filter((theme) => theme.id === project.design.customThemeId)
+			.map((theme) => ({ ...theme, design: { ...theme.design } }))
+			.sort((left, right) => left.id.localeCompare(right.id)),
 	};
 	const serialized = `${JSON.stringify(file, null, 2)}\n`;
 	if (new TextEncoder().encode(serialized).byteLength > MAX_PROJECT_FILE_BYTES) {
@@ -99,16 +106,23 @@ export function parseProjectFileJson(source: string): ProjectExportSnapshot {
 
 	const rawProject = validateProjectShape(value.project);
 	const rawMockups = validateMockups(value.mockups);
+	const rawThemes = validateThemes(value.themes);
 	const rawPreview = rawProject.preview;
+	const rawDesign = rawProject.design;
 	if (rawPreview.deviceId === 'imported' && typeof rawPreview.importedMockupId === 'string'
 		&& !rawMockups.some((mockup) => mockup.id === rawPreview.importedMockupId)) {
 		throw new ProjectFileValidationError(`The selected imported mockup "${rawPreview.importedMockupId}" is missing from the file.`);
+	}
+	if (typeof rawDesign.customThemeId === 'string'
+		&& !rawThemes.some((theme) => isRecord(theme) && theme.id === rawDesign.customThemeId)) {
+		throw new ProjectFileValidationError(`The selected custom theme "${rawDesign.customThemeId}" is missing from the file.`);
 	}
 
 	const registry = normalizeProjectRegistry({
 		projects: [{ ...rawProject, preview: { ...rawPreview, pageIndex: 0, activeSectionId: null, scrollTop: 0 } }],
 		activeProjectId: rawProject.id,
 		mockups: rawMockups,
+		themes: rawThemes,
 	}, 'ereader-6');
 	const project = registry.projects[0];
 	if (!project) throw new ProjectFileValidationError('The project configuration could not be normalized safely.');
@@ -119,6 +133,9 @@ export function parseProjectFileJson(source: string): ProjectExportSnapshot {
 	return {
 		project,
 		mockups: registry.mockups.filter((mockup) => referencedIds.has(mockup.id)).map(cloneMockup),
+		themes: project.design.customThemeId
+			? registry.themes.filter((theme) => theme.id === project.design.customThemeId).map((theme) => ({ ...theme, design: { ...theme.design } }))
+			: [],
 	};
 }
 
@@ -166,12 +183,7 @@ function validateProjectShape(value: unknown): Record<string, unknown> & {
 		if (value.metadata[key] !== undefined) requireText(value.metadata[key], `metadata.${key}`, MAX_TEXT_LENGTH);
 	}
 	if (!isRecord(value.design)) throw new ProjectFileValidationError('The project design settings must be an object.');
-	if (typeof value.design.themeId !== 'string' || !isThemeId(value.design.themeId)
-		|| typeof value.design.typographyScale !== 'string' || !isTypographyScale(value.design.typographyScale)
-		|| typeof value.design.chapterStyleId !== 'string' || !isChapterStyleId(value.design.chapterStyleId)
-		|| typeof value.design.sceneBreakId !== 'string' || !isSceneBreakId(value.design.sceneBreakId)) {
-		throw new ProjectFileValidationError('The project contains unsupported design settings.');
-	}
+	validateDesignShape(value.design);
 	if (!isRecord(value.preview)) throw new ProjectFileValidationError('The project preview settings must be an object.');
 	validatePreviewShape(value.preview);
 	return { ...value, id, name, source, metadata: value.metadata, design: value.design, preview: value.preview };
@@ -216,6 +228,34 @@ function validateMockups(value: unknown): ImportedHtmlMockup[] {
 		if (!postures || !color || !display) throw new ProjectFileValidationError(`Imported mockup "${id}" has malformed settings.`);
 		return { id, name, html, width: candidate.width, height: candidate.height, postures, color, display };
 	});
+}
+
+function validateThemes(value: unknown): unknown[] {
+	if (value === undefined) return [];
+	if (!Array.isArray(value) || value.length > 50) throw new ProjectFileValidationError('The project themes field must be an array of at most 50 themes.');
+	const seen = new Set<string>();
+	for (const candidate of value) {
+		if (!isRecord(candidate)) throw new ProjectFileValidationError('Every custom theme must be an object.');
+		const id = requireSafeId(candidate.id, 'custom theme ID');
+		if (seen.has(id)) throw new ProjectFileValidationError(`The custom theme ID "${id}" appears more than once.`);
+		seen.add(id);
+		if (!requireText(candidate.name, 'custom theme name', MAX_NAME_LENGTH).trim() || !isRecord(candidate.design)) {
+			throw new ProjectFileValidationError(`Custom theme "${id}" is malformed.`);
+		}
+		validateDesignShape(candidate.design);
+	}
+	return value;
+}
+
+function validateDesignShape(design: Record<string, unknown>): void {
+	if (typeof design.themeId !== 'string' || !isThemeId(design.themeId)
+		|| typeof design.typographyScale !== 'string' || !isTypographyScale(design.typographyScale)
+		|| typeof design.chapterStyleId !== 'string' || !isChapterStyleId(design.chapterStyleId)
+		|| design.firstParagraphStyleId !== undefined && (typeof design.firstParagraphStyleId !== 'string' || !['indented', 'flush', 'drop-cap'].includes(design.firstParagraphStyleId))
+		|| typeof design.sceneBreakId !== 'string' || !isSceneBreakId(design.sceneBreakId)) {
+		throw new ProjectFileValidationError('The project contains unsupported design settings.');
+	}
+	if (design.customThemeId !== undefined && design.customThemeId !== null) requireSafeId(design.customThemeId, 'custom theme ID');
 }
 
 function portableProject(project: BookProject): PortableBookProject {

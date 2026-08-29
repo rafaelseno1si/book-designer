@@ -13,4 +13,10 @@ describe('manuscriptSourceToBook', () => {
 		expect(html).toContain('data-book-section-template');
 		expect(html).not.toContain('tags: [draft]');
 	});
+
+	it('renders the selected first-paragraph preset', () => {
+		const book = manuscriptSourceToBook({ id: 'folder:Novel', type: 'folder', files: [{ id: 'Novel/01.md', vaultPath: 'Novel/01.md', content: '# Opening\n\nOnce upon a time.' }] }, 'book-1', { title: 'Novel', author: '', language: 'english', publisher: '', isbn: '' });
+		const html = renderBookPreviewDocument(book, { themeId: 'classic', typographyScale: 'comfortable', chapterStyleId: 'quiet', firstParagraphStyleId: 'drop-cap', sceneBreakId: 'space' }, 100);
+		expect(html).toContain('::first-letter');
+	});
 });

@@ -202,10 +202,48 @@ describe('BookProjectStore', () => {
 		expect(() => store.importProject(imported, [])).toThrow(ProjectIdConflictError);
 		expect(store.getSnapshot().registry.projects).toHaveLength(1);
 
-		const copy = store.importProject(imported, [], 'copy');
+		const copy = store.importProject(imported, [], [], 'copy');
 		expect(copy.id).toBe('project-copy');
 		expect(copy.name).toBe('Imported');
 		expect(store.getSnapshot().activeProject?.id).toBe('project-copy');
 		expect(store.getSnapshot().registry.projects).toHaveLength(2);
+	});
+
+	it('previews a theme without persisting or changing the applied project design', async () => {
+		const persist = vi.fn(async (_registry: unknown) => undefined);
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', persist, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		store.setRuntimeBook('project-a', {
+			id: 'project-a',
+			metadata: { title: 'Novel', author: '', language: 'english', publisher: '', isbn: '' },
+			sections: [{ id: 'chapter-1', type: 'chapter', title: 'Opening', source: { vaultPath: 'Books/Novel/01.md' }, blocks: [{ type: 'paragraph', inlines: [{ type: 'text', text: 'First paragraph' }] }] }],
+		});
+		await Promise.resolve();
+		const persistedCalls = persist.mock.calls.length;
+
+		const modern = store.getThemeOptions().find((theme) => theme.id === 'modern');
+		if (!modern) throw new Error('Expected the modern theme.');
+		store.setDesignPreview(modern.design);
+
+		expect(store.getSnapshot().activeProject?.design.themeId).toBe('classic');
+		expect(store.getSnapshot().runtime.previewDesign?.themeId).toBe('modern');
+		expect(store.getSnapshot().runtime.renderedHtml).toContain('system-ui');
+		expect(persist).toHaveBeenCalledTimes(persistedCalls);
+
+		store.setDesignPreview(null);
+		expect(store.getSnapshot().runtime.previewDesign).toBeNull();
+		expect(store.getSnapshot().runtime.renderedHtml).toContain('Georgia');
+	});
+
+	it('duplicates, edits, persists, and applies modular custom themes', () => {
+		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', async () => undefined, () => 'project-a');
+		store.createProject('Books/Novel', 'Novel');
+		const custom = store.duplicateTheme('classic');
+		const updated = store.updateCustomTheme(custom.id, { design: { firstParagraphStyleId: 'drop-cap', sceneBreakId: 'ornament' } });
+		store.applyTheme(custom.id);
+
+		expect(updated.design).toMatchObject({ firstParagraphStyleId: 'drop-cap', sceneBreakId: 'ornament' });
+		expect(store.getSnapshot().registry.themes).toEqual([expect.objectContaining({ id: custom.id })]);
+		expect(store.getSnapshot().activeProject?.design).toMatchObject({ customThemeId: custom.id, firstParagraphStyleId: 'drop-cap', sceneBreakId: 'ornament' });
 	});
 });

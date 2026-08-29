@@ -32,8 +32,10 @@ The top-level discriminator and version are fixed:
     },
     "design": {
       "themeId": "classic",
+      "customThemeId": null,
       "typographyScale": "comfortable",
       "chapterStyleId": "quiet",
+      "firstParagraphStyleId": "indented",
       "sceneBreakId": "space"
     },
     "preview": {
@@ -63,7 +65,8 @@ The top-level discriminator and version are fixed:
       "orientation": "portrait"
     }
   },
-  "mockups": []
+  "mockups": [],
+  "themes": []
 }
 ```
 
@@ -79,6 +82,7 @@ A v1 file contains:
 - book design configuration
 - durable Preview and device configuration
 - only imported HTML mockups referenced by that project
+- only the custom theme referenced by that project
 
 Mockups remain declarative, self-contained, sanitized HTML/CSS assets. They are size-limited and revalidated when a project file is opened.
 
@@ -93,6 +97,7 @@ A portable project file never contains:
 - plugin-global settings
 - the whole internal project registry
 - unrelated imported mockups
+- unrelated custom themes
 - transient Preview navigation: `pageIndex`, `activeSectionId`, and `scrollTop`
 
 Transient navigation is reset to the beginning when a project is duplicated or imported.

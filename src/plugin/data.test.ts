@@ -6,7 +6,7 @@ describe('normalizeBookDesignerData', () => {
 		expect(normalizeBookDesignerData({ defaultPreviewDevice: 'tablet', debugLogging: true })).toEqual({
 			version: 1,
 			settings: { defaultPreviewDevice: 'tablet', debugLogging: true },
-		projects: { version: 1, projects: [], mockups: [], activeProjectId: null },
+		projects: { version: 1, projects: [], mockups: [], themes: [], activeProjectId: null },
 		});
 	});
 });
