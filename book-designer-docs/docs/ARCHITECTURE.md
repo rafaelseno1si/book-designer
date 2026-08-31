@@ -1,5 +1,13 @@
 # Architecture
 
+## Implemented element boundary
+
+The first reusable package system is documented in [Element system](ELEMENT_SYSTEM.md). A vault-wide library is independent of projects; themes store only element assignments. HTML ingestion, inert parsing, approved isolated compilation, and validated static rendering are separate boundaries. Blockquote is its first category, not a parallel renderer/framework.
+
+`parse5` provides inert structural HTML inspection and CSS Tree provides parsed CSS policy/selector rewriting. Both are browser-compatible runtime dependencies, bundled by esbuild. XHTML output uses strict browser XML parsing plus allowlist reconstruction. Playwright and jsdom are development/test dependencies only. No ZIP or asset-loader dependency was added.
+
+The shared synchronous renderer accepts an optional immutable artifact; `renderPublicationFragment` reuses the section renderer/publication CSS without preview virtualization or reader overrides. Async compilation lives outside the renderer. Library/global replacement and plugin-settings writes are serialized and awaited; candidates are published only after successful persistence.
+
 ## High-level architecture
 
 ```text

@@ -1,6 +1,6 @@
 import { ObsidianIcon } from './ObsidianIcon';
 
-export type BookDesignerSection = 'project-file' | 'themes' | 'print-settings';
+export type BookDesignerSection = 'project-file' | 'themes' | 'elements' | 'print-settings';
 
 interface BookDesignerNavigationProps {
 	collapsed: boolean;
@@ -61,6 +61,7 @@ export function BookDesignerNavigation({
 					<ObsidianIcon name="palette" />
 					<span>Themes</span>
 				</button>
+				<button type="button" className={`book-designer-menu-item${activeSection === 'elements' ? ' is-selected' : ''}`} aria-current={activeSection === 'elements' ? 'page' : undefined} aria-label="Elements" title={collapsed ? 'Elements' : undefined} onClick={() => onSelectSection('elements')}><ObsidianIcon name="blocks" /><span>Elements</span></button>
 				<button
 					type="button"
 					className={`book-designer-menu-item${activeSection === 'print-settings' ? ' is-selected' : ''}`}

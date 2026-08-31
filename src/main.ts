@@ -18,6 +18,7 @@ import type { BookDesignerSettings } from './plugin/settings';
 import { BookDesignerSettingsTab } from './views/BookDesignerSettingsTab';
 import { BookDesignerView } from './views/BookDesignerView';
 import { BookPreviewView } from './views/BookPreviewView';
+import { ElementManagementService } from './plugin/elements/management';
 
 export default class BookDesignerPlugin extends Plugin {
 	settings!: BookDesignerSettings;
@@ -25,18 +26,19 @@ export default class BookDesignerPlugin extends Plugin {
 	private data!: BookDesignerPersistedData;
 	private manuscriptRuntime!: ActiveManuscriptRuntime;
 	private projectManagement!: ProjectManagementService;
+	private elements!: ElementManagementService;
+	private dataSaveQueue: Promise<void> = Promise.resolve();
 
 	async onload() {
 		await this.loadSettings();
 		this.projectStore = new BookProjectStore(
 			this.data.projects,
 			this.settings.defaultPreviewDevice,
-			async (projects) => {
-				this.data = { ...this.data, projects };
-				await this.saveData(this.data);
-			},
+			(projects) => this.persistData({ projects }),
 		);
 		this.projectManagement = new ProjectManagementService(this.app, this.projectStore);
+		this.elements = new ElementManagementService(this.app, this.projectStore);
+		this.register(() => this.elements.dispose());
 		this.manuscriptRuntime = new ActiveManuscriptRuntime(new ObsidianVaultReader(this), this.projectStore);
 		this.register(this.projectStore.subscribe(() => this.manuscriptRuntime.handleStoreChange()));
 		this.register(() => this.manuscriptRuntime.dispose());
@@ -53,7 +55,7 @@ export default class BookDesignerPlugin extends Plugin {
 		this.registerView(
 			BOOK_DESIGNER_VIEW_TYPE,
 			(leaf) =>
-				new BookDesignerView(leaf, this.projectStore, this.projectManagement, () => { void this.activatePreviewView(); }),
+				new BookDesignerView(leaf, this.projectStore, this.projectManagement, () => { void this.activatePreviewView(); }, this.elements),
 		);
 		this.registerView(
 			BOOK_PREVIEW_VIEW_TYPE,
@@ -103,9 +105,17 @@ export default class BookDesignerPlugin extends Plugin {
 	}
 
 	async saveSettings(nextSettings: BookDesignerSettings = this.settings) {
+		await this.persistData({ settings: nextSettings });
 		this.settings = nextSettings;
-		this.data = { ...this.data, settings: nextSettings };
-		await this.saveData(this.data);
+	}
+	private persistData(update: Partial<BookDesignerPersistedData>): Promise<void> {
+		const save = this.dataSaveQueue.catch(() => undefined).then(async () => {
+			const candidate = { ...this.data, ...update };
+			await this.saveData(candidate);
+			this.data = candidate;
+		});
+		this.dataSaveQueue = save;
+		return save;
 	}
 
 	private registerLiveEditorSynchronization() {

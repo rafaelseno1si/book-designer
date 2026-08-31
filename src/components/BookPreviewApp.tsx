@@ -269,6 +269,7 @@ export function BookPreviewApp({ projectStore }: BookPreviewAppProps) {
 					</div>}
 				</div>
 			</div>}
+			{snapshot.runtime.elementDiagnostic && <p className="book-designer-element-diagnostic" role="status">{snapshot.runtime.elementDiagnostic}</p>}
 		</header>
 		<main ref={canvasRef} className={`book-preview-canvas ${preview?.mode === 'paged' ? 'is-paged' : ''}`}><div className="book-preview-device-stage" style={deviceStageStyle}><section ref={deviceRef} className={`book-preview-device ${effectiveOrientation === 'landscape' ? 'is-landscape' : ''}${selectedHtmlMockup ? ' is-html-mockup' : ''}${importedViewport?.explicit ? ' is-explicit-frame' : ''}`} data-device={effectiveDeviceId ?? 'ereader-6'} data-mockup={mockup.id} style={deviceStyle} aria-label="Book preview viewport">
 			<div className="book-preview-screen">

@@ -1,4 +1,5 @@
 import { App, Notice, TFile, TFolder, normalizePath } from 'obsidian';
+import { libraryEntries, referencedElementIds, verifyEntryDigest } from './elements/library';
 import {
 	BOOK_DESIGNER_PROJECT_FILE_EXTENSION,
 	parseProjectFileJson,
@@ -69,7 +70,14 @@ export class ProjectManagementService implements ProjectManagementActions {
 				if (choice === 'cancel') return;
 				strategy = choice;
 			}
-			const project = this.store.importProject(parsed.project, parsed.mockups, parsed.themes, strategy);
+			const elements = await Promise.all((parsed.elements ?? []).map(verifyEntryDigest));
+			const project = this.store.importProject(parsed.project, parsed.mockups, parsed.themes, strategy, elements);
+			await this.store.whenPersisted();
+			if (parsed.warnings?.length) new Notice(parsed.warnings.join(' '), 10000);
+			const registry = this.store.getSnapshot().registry;
+			const installed = new Set(libraryEntries(registry).map((entry) => entry.id));
+			const missing = [...referencedElementIds(project, registry.themes.filter((theme) => theme.id === project.design.customThemeId))].filter((id) => !installed.has(id));
+			if (missing.length) new Notice(`Unresolved elements: ${missing.join(', ')}. Assignments are retained with standard blockquote fallback.`, 10000);
 			const folderExists = project.source.path === '' || this.app.vault.getAbstractFileByPath(project.source.path) instanceof TFolder;
 			if (!folderExists) {
 				new Notice(`Imported “${project.name}”, but “${project.source.path}” is not in this vault. Create that folder before opening Preview.`, 10_000);

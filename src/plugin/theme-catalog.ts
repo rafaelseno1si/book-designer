@@ -1,3 +1,4 @@
+import { cloneDesign } from '../core/elements/settings';
 import type {
 	BookProjectDesign,
 	ChapterStyleId,
@@ -12,6 +13,7 @@ export const THEME_ELEMENT_SLOT_IDS = [
 	'first-paragraph',
 	'typography',
 	'ornamental-break',
+	'blockquote',
 ] as const;
 
 export type ThemeElementSlotId = (typeof THEME_ELEMENT_SLOT_IDS)[number];
@@ -42,6 +44,7 @@ export const THEME_ELEMENT_SLOT_LABELS: Record<ThemeElementSlotId, string> = {
 	'first-paragraph': 'First paragraph',
 	typography: 'Typography',
 	'ornamental-break': 'Ornamental break',
+	blockquote: 'Blockquote',
 };
 
 export const BUILT_IN_THEME_OPTIONS: BookThemeOption[] = [
@@ -66,6 +69,7 @@ export const BUILT_IN_THEME_OPTIONS: BookThemeOption[] = [
 ];
 
 export const THEME_ELEMENT_PRESETS: Record<ThemeElementSlotId, ThemeElementPreset[]> = {
+	blockquote: [], // Package presets are read from the element library, not duplicated here.
 	'chapter-opening': [
 		preset<ChapterStyleId>('quiet', 'Quiet title', 'A restrained title with no chapter label.', 'chapterStyleId'),
 		preset<ChapterStyleId>('numbered', 'Numbered chapter', 'An editorial chapter label above the title.', 'chapterStyleId'),
@@ -91,7 +95,7 @@ export const THEME_ELEMENT_PRESETS: Record<ThemeElementSlotId, ThemeElementPrese
 export function themeOptions(customThemes: CustomBookTheme[]): BookThemeOption[] {
 	return [
 		...BUILT_IN_THEME_OPTIONS.map(cloneThemeOption),
-		...customThemes.map((theme) => ({ id: theme.id, name: theme.name, builtIn: false, design: { ...theme.design } })),
+		...customThemes.map((theme) => ({ id: theme.id, name: theme.name, builtIn: false, design: cloneDesign(theme.design) })),
 	];
 }
 
@@ -109,6 +113,7 @@ export function slotValue(design: BookProjectDesign, slot: ThemeElementSlotId): 
 		case 'first-paragraph': return design.firstParagraphStyleId;
 		case 'typography': return design.typographyScale;
 		case 'ornamental-break': return design.sceneBreakId;
+		case 'blockquote': return design.elements?.blockquote ? `${design.elements.blockquote.elementId}/${design.elements.blockquote.presetId}` : 'Standard blockquote';
 	}
 }
 
@@ -117,5 +122,5 @@ function preset<T extends string>(id: T, name: string, description: string, key:
 }
 
 function cloneThemeOption(theme: BookThemeOption): BookThemeOption {
-	return { ...theme, design: { ...theme.design } };
+	return { ...theme, design: cloneDesign(theme.design) };
 }

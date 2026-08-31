@@ -6,8 +6,12 @@ import { ProjectFilePanel } from './ProjectFilePanel';
 import { PrintSettingsPanel } from './PrintSettingsPanel';
 import { ThemesPanel } from './ThemesPanel';
 import { useBookProject } from './useBookProject';
+import type { ElementManagementService } from '../plugin/elements/management';
+import { ElementServices } from './elements/ElementServices';
+import { ElementsPage } from './elements/ElementsPage';
 
 interface BookDesignerAppProps {
+	elements: ElementManagementService;
 	projectStore: BookProjectStore;
 	projectActions: ProjectManagementActions;
 	onOpenPreview: () => void;
@@ -17,6 +21,7 @@ export function BookDesignerApp({
 	projectStore,
 	projectActions,
 	onOpenPreview,
+	elements,
 }: BookDesignerAppProps) {
 	const snapshot = useBookProject(projectStore);
 	const [navigationCollapsed, setNavigationCollapsed] = useState(false);
@@ -38,7 +43,7 @@ export function BookDesignerApp({
 	};
 
 	return (
-		<section
+		<ElementServices.Provider value={elements}><section
 			className={`book-designer-shell${navigationCollapsed ? ' is-navigation-collapsed' : ''}`}
 			aria-label="Book Designer"
 		>
@@ -56,7 +61,8 @@ export function BookDesignerApp({
 					projectStore={projectStore}
 					actions={projectActions}
 				/> : activeSection === 'themes'
-					? <ThemesPanel snapshot={snapshot} projectStore={projectStore} />
+					? <ThemesPanel snapshot={snapshot} projectStore={projectStore} onManageElements={() => selectSection('elements')} />
+					: activeSection === 'elements' ? <ElementsPage />
 					: <PrintSettingsPanel snapshot={snapshot} projectStore={projectStore} onDirtyChange={setPrintSettingsDirty} />}
 			</main>
 			{pendingSection && <div className="book-designer-confirm-backdrop" role="presentation">
@@ -66,6 +72,6 @@ export function BookDesignerApp({
 					<div><button type="button" onClick={() => setPendingSection(null)}>Keep editing</button><button type="button" className="mod-warning" onClick={discardAndNavigate}>Discard changes</button></div>
 				</div>
 			</div>}
-		</section>
+		</section></ElementServices.Provider>
 	);
 }

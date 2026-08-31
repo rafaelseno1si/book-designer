@@ -1,4 +1,7 @@
 import type { Book, BookMetadata } from '../core/model/book-model';
+import { cloneDesign, parseAssignments, sameElements } from '../core/elements/settings';
+import type { ElementArtifact, ElementAssignments, ElementLibraryEntry } from '../core/elements/types';
+import { cloneEntry, normalizeLibrary, referencedElementIds, remapDesignElements } from './elements/library';
 import { isPreviewMockupId, type PreviewMockupId } from '../core/mockups/preview-mockup';
 import {
 	DEFAULT_MOCKUP_COLOR_CONFIG,
@@ -52,6 +55,7 @@ export function isFirstParagraphStyleId(value: string): value is FirstParagraphS
 
 export type BookProjectMetadata = BookMetadata;
 export interface BookProjectDesign {
+	elements?: ElementAssignments;
 	themeId: ThemeId;
 	customThemeId: string | null;
 	typographyScale: TypographyScale;
@@ -127,6 +131,7 @@ export interface BookProject {
 	preview: BookProjectPreviewState;
 }
 export interface BookProjectRegistry {
+	elements?: ElementLibraryEntry[];
 	version: 1;
 	projects: BookProject[];
 	activeProjectId: string | null;
@@ -134,6 +139,7 @@ export interface BookProjectRegistry {
 	themes: CustomBookTheme[];
 }
 export interface ProjectRuntime {
+	elementDiagnostic?: string | null;
 	status: 'idle' | 'loading' | 'ready' | 'empty' | 'error';
 	book: Book | null;
 	renderedHtml: string;
@@ -143,6 +149,7 @@ export interface ProjectRuntime {
 	printPageCount: number | null;
 }
 export interface BookProjectSnapshot {
+	registryRevision: number;
 	registry: BookProjectRegistry;
 	activeProject: BookProject | null;
 	runtime: ProjectRuntime;
@@ -208,13 +215,16 @@ export function normalizeProjectRegistry(value: unknown, defaultDevice: PreviewD
 	for (const project of projects) {
 		if (project.design.customThemeId && !themes.some((theme) => theme.id === project.design.customThemeId)) project.design.customThemeId = null;
 	}
-	return { version: 1, projects, mockups, themes, activeProjectId: projects.some((project) => project.id === requestedId) ? requestedId : projects[0]?.id ?? null };
+	return { version: 1, projects, mockups, themes, elements: normalizeLibrary(value.elements), activeProjectId: projects.some((project) => project.id === requestedId) ? requestedId : projects[0]?.id ?? null };
 }
 
 export class BookProjectStore {
+	private elementArtifact: ElementArtifact | null = null;
+	private persistQueue: Promise<void> = Promise.resolve();
 	private registry: BookProjectRegistry;
 	private runtime: ProjectRuntime = { ...EMPTY_RUNTIME };
 	private revision = 0;
+	private registryRevision = 0;
 	private snapshot: BookProjectSnapshot;
 	private readonly listeners = new Set<() => void>();
 
@@ -231,6 +241,7 @@ export class BookProjectStore {
 	getSnapshot(): BookProjectSnapshot {
 		return this.snapshot;
 	}
+	whenPersisted(): Promise<void> { return this.persistQueue; }
 	subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 
 	createProject(folderPath: string, folderName: string): BookProject {
@@ -300,12 +311,13 @@ export class BookProjectStore {
 		return this.registry.projects.some((project) => project.id === projectId);
 	}
 
-	getProjectSnapshot(projectId: string): { project: BookProject; mockups: ImportedHtmlMockup[]; themes: CustomBookTheme[] } | null {
+	getProjectSnapshot(projectId: string): { project: BookProject; mockups: ImportedHtmlMockup[]; themes: CustomBookTheme[]; elements: ElementLibraryEntry[] } | null {
 		const project = this.registry.projects.find((candidate) => candidate.id === projectId);
 		if (!project) return null;
 		const referencedIds = projectMockupIds(project);
 		return {
 			project: cloneProject(project) as BookProject,
+			elements: (this.registry.elements ?? []).filter((entry) => referencedElementIds(project, this.registry.themes.filter((theme) => theme.id === project.design.customThemeId)).has(entry.id)).map(cloneEntry),
 			mockups: this.registry.mockups.filter((mockup) => referencedIds.has(mockup.id)).map(cloneImportedMockup),
 			themes: project.design.customThemeId
 				? this.registry.themes.filter((theme) => theme.id === project.design.customThemeId).map(cloneCustomTheme)
@@ -318,11 +330,26 @@ export class BookProjectStore {
 		incomingMockups: ImportedHtmlMockup[],
 		incomingThemes: CustomBookTheme[] = [],
 		collisionStrategy: ProjectImportCollisionStrategy = 'reject',
+		incomingElements: ElementLibraryEntry[] = [],
 	): BookProject {
 		const conflicts = this.hasProject(incomingProject.id);
 		if (conflicts && collisionStrategy === 'reject') throw new ProjectIdConflictError(incomingProject.id);
-		const merged = mergeImportedMockups(this.registry.mockups, incomingMockups, incomingProject);
-		const themeMerge = mergeCustomThemes(this.registry.themes, incomingThemes, merged.project);
+		const elements = (this.registry.elements ?? []).map(cloneEntry);
+		const ids = new Map<string, string>();
+		for (const entry of incomingElements) {
+			const identical = elements.find((existing) => existing.package.files['index.html'] === entry.package.files['index.html']);
+			if (identical) { ids.set(entry.id, identical.id); continue; }
+			let id = entry.id;
+			while (elements.some((existing) => existing.id === id)) id = `element-${defaultProjectId()}`;
+			ids.set(entry.id, id); elements.push({ ...cloneEntry(entry), id, previousPackage: undefined });
+		}
+		if (elements.length > 200) throw new Error('Import would exceed the 200-entry element library limit.');
+		// A missing portable package must not accidentally bind to unrelated installed content.
+		for (const id of referencedElementIds(incomingProject, incomingThemes)) {
+			if (!id.startsWith('builtin.') && !ids.has(id) && elements.some((entry) => entry.id === id)) ids.set(id, `unresolved-${defaultProjectId()}`);
+		}
+		const merged = mergeImportedMockups(this.registry.mockups, incomingMockups, { ...incomingProject, design: remapDesignElements(incomingProject.design, ids) });
+		const themeMerge = mergeCustomThemes(this.registry.themes, incomingThemes.map((theme) => ({ ...theme, design: remapDesignElements(theme.design, ids) })), merged.project);
 		const project = themeMerge.project;
 		if (conflicts && collisionStrategy === 'copy') project.id = this.nextAvailableProjectId();
 		const nameCandidates = this.registry.projects.filter((candidate) => !(conflicts && collisionStrategy === 'replace' && candidate.id === project.id));
@@ -331,7 +358,7 @@ export class BookProjectStore {
 		const projects = conflicts && collisionStrategy === 'replace'
 			? this.registry.projects.map((candidate) => candidate.id === project.id ? project : candidate)
 			: [...this.registry.projects, project];
-		this.registry = { ...this.registry, projects, mockups: merged.mockups, themes: themeMerge.themes, activeProjectId: project.id };
+		this.registry = { ...this.registry, projects, elements, mockups: merged.mockups, themes: themeMerge.themes, activeProjectId: project.id };
 		this.runtime = { ...EMPTY_RUNTIME, status: 'loading' };
 		this.commit(true);
 		return cloneProject(project) as BookProject;
@@ -347,7 +374,7 @@ export class BookProjectStore {
 		}
 		this.commit(true);
 	}
-	updateDesign(design: Partial<BookProjectDesign>): void { this.updateActive((project) => ({ ...project, design: { ...project.design, ...design } }), true); }
+	updateDesign(design: Partial<BookProjectDesign>): void { this.updateActive((project) => ({ ...project, design: cloneDesign({ ...project.design, ...design }) }), true); }
 	updatePrintSettings(settings: BookPrintSettings): void {
 		const normalized = normalizePrintSettings(settings);
 		const errors = validatePrintSettings(normalized);
@@ -376,7 +403,7 @@ export class BookProjectStore {
 			id,
 			name: nextThemeName(`${source.name} copy`, this.registry.themes),
 			baseThemeId: source.design.themeId,
-			design: { ...source.design, customThemeId: id },
+			design: cloneDesign({ ...source.design, customThemeId: id }),
 		};
 		this.registry = { ...this.registry, themes: [...this.registry.themes, theme] };
 		this.commit(true);
@@ -386,7 +413,7 @@ export class BookProjectStore {
 		const existing = this.registry.themes.find((theme) => theme.id === themeId);
 		if (!existing) throw new Error('That custom theme no longer exists.');
 		const name = update.name === undefined ? existing.name : validatedThemeName(update.name, this.registry.themes, themeId);
-		const design = update.design ? { ...existing.design, ...update.design, customThemeId: themeId } : existing.design;
+		const design = cloneDesign(update.design ? { ...existing.design, ...update.design, customThemeId: themeId } : existing.design);
 		const theme: CustomBookTheme = { ...existing, name, baseThemeId: design.themeId, design };
 		this.registry = { ...this.registry, themes: this.registry.themes.map((candidate) => candidate.id === themeId ? theme : candidate) };
 		this.commit(true);
@@ -396,10 +423,10 @@ export class BookProjectStore {
 		const theme = findThemeOption(themeId, this.registry.themes);
 		if (!theme) return;
 		this.runtime = { ...this.runtime, previewDesign: null };
-		this.updateActive((project) => ({ ...project, design: { ...theme.design } }), true);
+		this.updateActive((project) => ({ ...project, design: cloneDesign(theme.design) }), true);
 	}
 	setDesignPreview(design: BookProjectDesign | null): void {
-		const next = design ? { ...design } : null;
+		const next = design ? cloneDesign(design) : null;
 		if (sameDesign(this.runtime.previewDesign, next)) return;
 		this.runtime = { ...this.runtime, previewDesign: next };
 		this.refreshRenderedHtml();
@@ -519,20 +546,49 @@ export class BookProjectStore {
 	private refreshRenderedHtml(): void {
 		const project = this.activeProject;
 		if (!project || !this.runtime.book) return;
-		this.runtime = { ...this.runtime, renderedHtml: renderBookPreviewDocument(this.runtime.book, this.runtime.previewDesign ?? project.design, project.preview.readerScale) };
+		const design = this.runtime.previewDesign ?? project.design;
+		this.runtime = { ...this.runtime, renderedHtml: renderBookPreviewDocument(this.runtime.book, design, project.preview.readerScale, design.elements?.blockquote ? this.elementArtifact : null) };
+	}
+	setElementArtifact(artifact: ElementArtifact | null): void {
+		if (artifact === this.elementArtifact) return;
+		this.elementArtifact = artifact; this.refreshRenderedHtml(); this.commit(false);
+	}
+	setElementDiagnostic(message: string | null): void {
+		if ((this.runtime.elementDiagnostic ?? null) === message) return;
+		this.runtime = { ...this.runtime, elementDiagnostic: message }; this.commit(false);
+	}
+	async commitElementRegistry(next: BookProjectRegistry, expectedRevision: number): Promise<void> {
+		const candidate = cloneRegistry(next);
+		const transaction = this.persistQueue.catch(() => undefined).then(async () => {
+			if (this.registryRevision !== expectedRevision) throw new Error('Projects changed during confirmation. Please try again.');
+			await this.persist(candidate);
+			if (this.registryRevision !== expectedRevision) {
+				await this.persist(cloneRegistry(this.registry));
+				throw new Error('Projects changed while saving. Element change was canceled.');
+			}
+			this.registry = candidate; this.registryRevision++; this.elementArtifact = null; this.runtime = { ...this.runtime, previewDesign: null }; this.refreshRenderedHtml(); this.commit(false);
+		});
+		this.persistQueue = transaction.catch(() => undefined);
+		return transaction;
 	}
 	private commit(shouldPersist: boolean): void {
+		if (shouldPersist) this.registryRevision++;
 		this.revision += 1;
 		this.snapshot = this.createSnapshot();
 		for (const listener of this.listeners) listener();
-		if (shouldPersist) void this.persist(cloneRegistry(this.registry));
+		if (shouldPersist) {
+			const registry = cloneRegistry(this.registry);
+			this.persistQueue = this.persistQueue.catch(() => undefined).then(() => this.persist(registry));
+			void this.persistQueue.catch((error: unknown) => { console.error('Book Designer could not persist project settings.', error); });
+		}
 	}
 	private createSnapshot(): BookProjectSnapshot {
 		return {
 			registry: cloneRegistry(this.registry),
 			activeProject: cloneProject(this.activeProject),
-			runtime: { ...this.runtime, previewDesign: this.runtime.previewDesign ? { ...this.runtime.previewDesign } : null, previewPrintSettings: this.runtime.previewPrintSettings ? { ...this.runtime.previewPrintSettings } : null },
+			runtime: { ...this.runtime, previewDesign: this.runtime.previewDesign ? cloneDesign(this.runtime.previewDesign) : null, previewPrintSettings: this.runtime.previewPrintSettings ? { ...this.runtime.previewPrintSettings } : null },
 			revision: this.revision,
+			registryRevision: this.registryRevision,
 		};
 	}
 	private get activeProject(): BookProject | null { return this.registry.projects.find((project) => project.id === this.registry.activeProjectId) ?? null; }
@@ -558,6 +614,8 @@ function normalizeProject(value: unknown, defaultDevice: PreviewDeviceId): BookP
 	}, design: normalizeProjectDesign(design), print: normalizePrintSettings(value.print, preview.printColorMode), preview: normalizePreviewState(preview, defaultDevice) }];
 }
 function normalizeProjectDesign(design: Record<string, unknown>): BookProjectDesign {
+	let elements: ElementAssignments = {};
+	try { elements = parseAssignments(design.elements); } catch { /* Corrupt assignments cannot enter the runtime. */ }
 	const themeId = stringOr(design.themeId, '');
 	const typographyScale = stringOr(design.typographyScale, '');
 	const chapterStyleId = stringOr(design.chapterStyleId, '');
@@ -565,6 +623,7 @@ function normalizeProjectDesign(design: Record<string, unknown>): BookProjectDes
 	const sceneBreakId = stringOr(design.sceneBreakId, '');
 	return {
 		themeId: isThemeId(themeId) ? themeId : 'classic',
+		...(elements.blockquote ? { elements } : {}),
 		customThemeId: typeof design.customThemeId === 'string' && validCustomThemeId(design.customThemeId) ? design.customThemeId : null,
 		typographyScale: isTypographyScale(typographyScale) ? typographyScale : 'comfortable',
 		chapterStyleId: isChapterStyleId(chapterStyleId) ? chapterStyleId : 'quiet',
@@ -730,12 +789,12 @@ function normalizeImportedMockupPostures(value: unknown): ImportedHtmlMockup['po
 	return postures[0]?.id === 'unfold' && postures.every((posture, index) => posture.id === (index === 0 ? 'unfold' : `fold${index}`)) ? postures : [];
 }
 function withoutKey<T>(value: Record<string, T>, key: string): Record<string, T> { const { [key]: _, ...remaining } = value; return remaining; }
-function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: { ...project.design }, print: { ...project.print }, preview: { ...project.preview, mockupPostures: { ...project.preview.mockupPostures }, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
+function cloneProject(project: BookProject | null): BookProject | null { return project ? { ...project, source: { ...project.source }, metadata: { ...project.metadata }, design: cloneDesign(project.design), print: { ...project.print }, preview: { ...project.preview, mockupPostures: { ...project.preview.mockupPostures }, deviceContentSettings: Object.fromEntries(Object.entries(project.preview.deviceContentSettings).map(([key, value]) => [key, { ...value }])) } } : null; }
 function cloneImportedMockup(mockup: ImportedHtmlMockup): ImportedHtmlMockup {
 	return { ...mockup, color: { ...mockup.color }, display: { ...mockup.display }, postures: mockup.postures.map((posture) => ({ ...posture, frame: posture.frame ? { ...posture.frame } : null })) };
 }
-function cloneCustomTheme(theme: CustomBookTheme): CustomBookTheme { return { ...theme, design: { ...theme.design } }; }
-function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup), themes: registry.themes.map(cloneCustomTheme) }; }
+function cloneCustomTheme(theme: CustomBookTheme): CustomBookTheme { return { ...theme, design: cloneDesign(theme.design) }; }
+function cloneRegistry(registry: BookProjectRegistry): BookProjectRegistry { return { version: 1, activeProjectId: registry.activeProjectId, projects: registry.projects.map((project) => cloneProject(project) as BookProject), mockups: registry.mockups.map(cloneImportedMockup), themes: registry.themes.map(cloneCustomTheme), elements: (registry.elements ?? []).map(cloneEntry) }; }
 function resetTransientPreview(preview: BookProjectPreviewState): BookProjectPreviewState {
 	return { ...preview, pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 }
@@ -850,7 +909,7 @@ function sameDesign(left: BookProjectDesign | null, right: BookProjectDesign | n
 		&& left.typographyScale === right.typographyScale
 		&& left.chapterStyleId === right.chapterStyleId
 		&& left.firstParagraphStyleId === right.firstParagraphStyleId
-		&& left.sceneBreakId === right.sceneBreakId);
+		&& left.sceneBreakId === right.sceneBreakId && sameElements(left.elements, right.elements));
 }
 function sameNullablePrintSettings(left: BookPrintSettings | null, right: BookPrintSettings | null): boolean {
 	return left === right || Boolean(left && right && samePrintSettings(left, right));

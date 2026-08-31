@@ -10,6 +10,7 @@ import {
 	ThemeElementSettingsPage,
 } from './ThemeEditorPage';
 import { ThemeElementsNavigation } from './ThemeElementsNavigation';
+import { ElementPresetCatalog } from './elements/ElementPresetCatalog';
 
 type ThemeScreen =
 	| { kind: 'catalog' }
@@ -17,7 +18,7 @@ type ThemeScreen =
 	| { kind: 'presets'; themeId: string; slot: ThemeElementSlotId }
 	| { kind: 'settings'; themeId: string; slot: ThemeElementSlotId; presetId: string };
 
-export function ThemesPanel({ snapshot, projectStore }: { snapshot: BookProjectSnapshot; projectStore: BookProjectStore }) {
+export function ThemesPanel({ snapshot, projectStore, onManageElements }: { snapshot: BookProjectSnapshot; projectStore: BookProjectStore; onManageElements: () => void }) {
 	const [screen, setScreen] = useState<ThemeScreen>({ kind: 'catalog' });
 	const [elementsCollapsed, setElementsCollapsed] = useState(false);
 	const project = snapshot.activeProject;
@@ -76,7 +77,8 @@ export function ThemesPanel({ snapshot, projectStore }: { snapshot: BookProjectS
 						onOpenSlot={(slot) => setScreen({ kind: 'presets', themeId: editingTheme.id, slot })}
 					/>
 				)}
-				{screen.kind === 'presets' && (
+				{screen.kind === 'presets' && screen.slot === 'blockquote' && <ElementPresetCatalog key={editingTheme.id} theme={editingTheme} onBack={() => setScreen({ kind: 'editor', themeId: editingTheme.id })} onManage={onManageElements} />}
+				{screen.kind === 'presets' && screen.slot !== 'blockquote' && (
 					<ThemeElementPresetsPage
 						theme={editingTheme}
 						slot={screen.slot}

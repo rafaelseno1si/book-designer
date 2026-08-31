@@ -42,5 +42,6 @@ function slotIcon(slot: ThemeElementSlotId): Parameters<typeof ObsidianIcon>[0][
 		case 'first-paragraph': return 'pilcrow';
 		case 'typography': return 'type';
 		case 'ornamental-break': return 'separator-horizontal';
+		case 'blockquote': return 'quote';
 	}
 }

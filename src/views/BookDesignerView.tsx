@@ -2,6 +2,7 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { StrictMode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { BookDesignerApp } from '../components/BookDesignerApp';
+import type { ElementManagementService } from '../plugin/elements/management';
 import { BOOK_DESIGNER_ICON, BOOK_DESIGNER_VIEW_TYPE } from '../plugin/constants';
 import type { ProjectManagementActions } from '../plugin/project-management';
 import type { BookProjectStore } from '../plugin/project-store';
@@ -17,6 +18,7 @@ export class BookDesignerView extends ItemView {
 		projectStore: BookProjectStore,
 		projectActions: ProjectManagementActions,
 		openPreview: () => void,
+		private readonly elements: ElementManagementService,
 	) {
 		super(leaf);
 		this.projectStore = projectStore;
@@ -49,7 +51,8 @@ export class BookDesignerView extends ItemView {
 			<StrictMode>
 				<BookDesignerApp
 					projectStore={this.projectStore}
-					projectActions={this.projectActions}
+						projectActions={this.projectActions}
+						elements={this.elements}
 					onOpenPreview={this.openPreview}
 				/>
 			</StrictMode>,

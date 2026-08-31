@@ -5,17 +5,19 @@ export function ThemeCatalogControls({
 	onSearchChange,
 	perPage,
 	onPerPageChange,
+	searchLabel = 'Search themes',
 }: {
 	search: string;
 	onSearchChange: (value: string) => void;
 	perPage: number;
 	onPerPageChange: (value: number) => void;
+	searchLabel?: string;
 }) {
 	return (
 		<div className="book-designer-theme-controls">
 			<label className="book-designer-theme-search">
 				<ObsidianIcon name="search" />
-				<span className="book-designer-visually-hidden">Search themes</span>
+				<span className="book-designer-visually-hidden">{searchLabel}</span>
 				<input type="search" value={search} onChange={(event) => onSearchChange(event.currentTarget.value)} placeholder="Search" />
 			</label>
 			<label className="book-designer-theme-per-page">
@@ -30,9 +32,9 @@ export function ThemeCatalogControls({
 	);
 }
 
-export function ThemePagination({ page, pageCount, onPageChange }: { page: number; pageCount: number; onPageChange: (page: number) => void }) {
+export function ThemePagination({ page, pageCount, onPageChange, label = 'Theme pages' }: { page: number; pageCount: number; onPageChange: (page: number) => void; label?: string }) {
 	return (
-		<nav className="book-designer-theme-pagination" aria-label="Theme pages">
+		<nav className="book-designer-theme-pagination" aria-label={label}>
 			<button type="button" onClick={() => onPageChange(page - 1)} disabled={page <= 1} aria-label="Previous page"><ObsidianIcon name="chevron-left" /></button>
 			<span>Page {page} of {pageCount}</span>
 			<button type="button" onClick={() => onPageChange(page + 1)} disabled={page >= pageCount} aria-label="Next page"><ObsidianIcon name="chevron-right" /></button>

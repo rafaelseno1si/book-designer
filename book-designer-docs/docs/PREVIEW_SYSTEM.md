@@ -1,5 +1,11 @@
 # Preview System
 
+## Element compilation integration
+
+Blockquote catalog/settings previews use labeled sample content. Selecting/editing a theme assignment also updates actual manuscript quotations through the shared runtime. Compilation is asynchronous, debounced, cached and generation-checked; the renderer remains synchronous. Valid same-project output stays visible during recompilation, but project switches/library invalidation do not reuse another project's artifact. Cancel/navigation restore the applied project's design.
+
+Executable frames exist only for background compilation and the open authored editor, not for each quotation/card. Preview/publication XHTML contains no package script, bridge, editor control or authoring frame. Existing live source refresh, continuous virtualization, and paged virtualization consume the resulting static document. See [Element system](ELEMENT_SYSTEM.md) and the [verification checklist](TESTING.md).
+
 ## Product goal
 
 Provide immediate visual feedback while preserving the reality that reflowable ebooks are adaptive.

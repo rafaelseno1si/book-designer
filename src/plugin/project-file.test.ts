@@ -45,7 +45,7 @@ describe('Book Designer project files', () => {
 		expect(parsed.mockups.map((mockup) => mockup.id)).toEqual(['reader-a']);
 	});
 
-	it('writes version 2 and migrates version 1 print output', () => {
+	it('writes version 3 and migrates version 1 print output', () => {
 		const value = JSON.parse(serializeProjectFile(projectSnapshot())) as {
 			version: number;
 			project: { print?: unknown; preview: Record<string, unknown> };

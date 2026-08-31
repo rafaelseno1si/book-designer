@@ -1223,6 +1223,7 @@
 }
 
 .book-designer-themes-page,
+.book-designer-elements-page,
 .book-designer-theme-editor-page,
 .book-designer-theme-settings-page {
 	container-type: inline-size;
@@ -1782,6 +1783,22 @@
 	border-radius: var(--radius-m);
 	overflow: hidden;
 }
+
+.book-designer-element-library { margin-top: 24px; }
+.book-designer-element-library-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, .5fr); gap: 24px; border-top: 1px solid var(--background-modifier-border); padding: 24px 0; }
+.book-designer-element-library-row h2 { margin: 0 0 6px; font-size: var(--font-ui-medium); }
+.book-designer-element-library-row p { margin: 6px 0; color: var(--text-muted); }
+.book-designer-element-library-row small, .book-designer-element-help { color: var(--text-muted); font-size: var(--font-ui-small); }
+.book-designer-element-library-row details { margin-top: 12px; }
+.book-designer-element-library-actions { display: flex; gap: 8px; flex-wrap: wrap; align-content: start; justify-content: flex-end; }
+.book-designer-element-frame { width: 100%; height: 100%; border: 0; display: block; }
+.book-designer-element-editor { min-height: 160px; max-height: 800px; }
+.book-designer-element-background { position: fixed; left: -10000px; top: 0; width: 480px; height: 600px; pointer-events: none; visibility: hidden; }
+.book-designer-theme-settings-preview, .book-designer-theme-editor-preview { position: relative; }
+.book-designer-element-sample-label, .book-designer-element-preview-status { position: absolute; bottom: 8px; left: 8px; right: 8px; padding: 4px 8px; background: var(--background-primary); color: var(--text-muted); font: var(--font-ui-smaller) var(--font-interface); white-space: normal; }
+.book-designer-element-sample-label + .book-designer-element-preview-status { bottom: 32px; }
+@media (max-width: 700px) { .book-designer-element-library-row { grid-template-columns: 1fr; gap: 12px; } .book-designer-element-library-actions { justify-content: flex-start; } }
+@media (prefers-reduced-motion: reduce) { .book-designer-theme-card, .book-designer-theme-preview-frame { transition: none; } }
 
 .book-designer-theme-settings-actions {
 	display: flex;

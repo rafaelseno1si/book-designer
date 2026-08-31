@@ -1,5 +1,11 @@
 # Rendering Pipeline
 
+## Implemented quotation path
+
+Markdown `>` already produces recursive semantic blockquote nodes. An async shared element compiler resolves the selected theme assignment, executes approved authoring code in an opaque runner, and validates a reusable static wrapper/CSS artifact. The synchronous renderer inserts its own recursively rendered child XHTML into the artifact's declared slot. No package sees manuscript text; no source Markdown is changed.
+
+Book Preview, theme samples, and `renderPublicationFragment` share section rendering and canonical theme tokens/CSS. The publication fragment excludes preview templates, UI and reader scaling. Its XHTML is well-formed and script-free; full EPUB/PDF packaging remains future work. Failed/unapproved/unavailable elements use semantic fallback without deleting assignments. See [Element system](ELEMENT_SYSTEM.md).
+
 ## Main principle
 
 The preview and export paths must share the same renderer.

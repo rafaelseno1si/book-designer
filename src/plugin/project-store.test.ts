@@ -40,7 +40,7 @@ describe('BookProjectStore', () => {
 		const snapshot = store.getSnapshot();
 		expect(snapshot.activeProject).toMatchObject({ id: 'project-a', name: 'Novel', metadata: { author: 'Author A' }, design: { themeId: 'modern' }, preview: { readerScale: 120, scrollTop: 48, activeSectionId: 'chapter-a' } });
 		expect(snapshot.registry.projects[1]).toMatchObject({ id: 'project-b', name: 'Novel 2', metadata: { author: 'Author B' }, preview: { readerScale: 85 } });
-		await Promise.resolve();
+		await store.whenPersisted();
 		const saved = persist.mock.calls[persist.mock.calls.length - 1]?.[0];
 		expect(saved).toEqual(snapshot.registry);
 		expect(JSON.stringify(saved)).not.toContain('renderedHtml');
@@ -132,7 +132,7 @@ describe('BookProjectStore', () => {
 		const persist = vi.fn(async (_registry: unknown) => undefined);
 		const store = new BookProjectStore(emptyProjectRegistry(), 'phone', persist, () => 'project-a');
 		store.createProject('Books/Novel', 'Novel');
-		await Promise.resolve();
+		await store.whenPersisted();
 		const persistedCalls = persist.mock.calls.length;
 		const applied = store.getSnapshot().activeProject?.print;
 		if (!applied) throw new Error('Expected print settings.');
@@ -203,7 +203,7 @@ describe('BookProjectStore', () => {
 		expect(store.getSnapshot()).not.toBe(before);
 		expect(store.getSnapshot().activeProject?.name).toBe('Renamed');
 		expect(() => store.renameProject('project-b', 'First')).toThrow(ProjectNameValidationError);
-		await Promise.resolve();
+		await store.whenPersisted();
 		expect(persist).toHaveBeenLastCalledWith(store.getSnapshot().registry);
 	});
 
@@ -245,7 +245,7 @@ describe('BookProjectStore', () => {
 			metadata: { title: 'Novel', author: '', language: 'english', publisher: '', isbn: '' },
 			sections: [{ id: 'chapter-1', type: 'chapter', title: 'Opening', source: { vaultPath: 'Books/Novel/01.md' }, blocks: [{ type: 'paragraph', inlines: [{ type: 'text', text: 'First paragraph' }] }] }],
 		});
-		await Promise.resolve();
+		await store.whenPersisted();
 		const persistedCalls = persist.mock.calls.length;
 
 		const modern = store.getThemeOptions().find((theme) => theme.id === 'modern');

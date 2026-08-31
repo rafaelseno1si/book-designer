@@ -1,5 +1,13 @@
 # Theme System
 
+## Current library-backed category
+
+Theme elements has five items: Chapter opening, First paragraph, Typography, Ornamental break, and **Blockquote**. The first four retain their existing presets. Blockquote selects compatible presets from the separate, project-independent **Elements** library; its catalog links to Manage elements rather than duplicating package CRUD.
+
+Themes store `design.elements.blockquote = { elementId, presetId, settingsOverrides }`. Defaults, preset values, then overrides determine effective settings. The selected assignment decorates every semantic Markdown blockquote in the book. Catalog/settings use a labeled sample even without manuscript quotations. Authored controls are embedded in isolation; React owns preset selection, diagnostics, Reset, Apply and Cancel. Apply saves the custom theme; Apply theme to book is still a separate action. Cancel/navigation discard the draft and restore the applied project preview.
+
+Custom/imported element code belongs to the element library, never a theme manifest. See [Element system](ELEMENT_SYSTEM.md) and [Element authoring](ELEMENT_AUTHORING.md). The conceptual theme asset formats below remain future design notes, not supported import formats.
+
 ## Goal
 
 Themes should give authors polished book designs without requiring CSS expertise.

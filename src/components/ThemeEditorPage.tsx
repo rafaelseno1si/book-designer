@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Book } from '../core/model/book-model';
-import { renderBookThemeSampleDocument } from '../core/renderer/book-preview-renderer';
+import { CompiledThemePreview } from './elements/ElementServices';
 import type { BookProjectDesign, BookProjectStore } from '../plugin/project-store';
 import {
 	THEME_ELEMENT_PRESETS,
@@ -54,7 +54,7 @@ export function ThemeEditorOverview({
 			</header>
 			<div className="book-designer-theme-editor-preview">
 				{book
-					? <iframe title={`${theme.name} preview`} srcDoc={renderBookThemeSampleDocument(book, theme.design)} sandbox="" />
+					? <CompiledThemePreview title={`${theme.name} preview`} book={book} design={theme.design} />
 					: <div className="book-designer-theme-preview-placeholder"><ObsidianIcon name="book-open" /><span>Open a project to preview its first chapter</span></div>}
 			</div>
 			<div className="book-designer-theme-element-summary">
@@ -193,7 +193,7 @@ export function ThemeElementSettingsPage({
 					{activePreset && <p>{activePreset.description}</p>}
 				</div>
 				<div className="book-designer-theme-settings-preview">
-					{book ? <iframe title="Element settings preview" srcDoc={renderBookThemeSampleDocument(book, design)} sandbox="" /> : <div className="book-designer-theme-preview-placeholder">No chapter available</div>}
+					{book ? <CompiledThemePreview title="Element settings preview" book={book} design={design} /> : <div className="book-designer-theme-preview-placeholder">No chapter available</div>}
 				</div>
 			</div>
 			<div className="book-designer-theme-settings-actions">

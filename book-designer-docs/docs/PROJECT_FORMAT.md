@@ -11,14 +11,14 @@ Neither form copies manuscript Markdown. Projects continue to reference a vault 
 
 **Save as** is not a file export. It duplicates the active project inside the internal registry with a new stable ID and resets transient Preview navigation.
 
-## Portable format v2
+## Portable format v3
 
 The top-level discriminator and version are fixed:
 
 ```json
 {
   "format": "book-designer-project",
-  "version": 2,
+  "version": 3,
   "project": {
     "id": "project-01",
     "name": "My Novel",
@@ -86,7 +86,8 @@ The top-level discriminator and version are fixed:
     }
   },
   "mockups": [],
-  "themes": []
+  "themes": [],
+  "elements": []
 }
 ```
 
@@ -94,7 +95,7 @@ The durable Preview fields follow the current `BookProjectPreviewState` configur
 
 ## Included data
 
-A v2 file contains:
+A v3 file contains:
 
 - one project ID and name
 - one folder source configuration
@@ -104,6 +105,7 @@ A v2 file contains:
 - durable Preview and device configuration
 - only imported HTML mockups referenced by that project
 - only the custom theme referenced by that project
+- only current element packages referenced by that project or its custom theme
 
 Mockups remain declarative, self-contained, sanitized HTML/CSS assets. They are size-limited and revalidated when a project file is opened.
 
@@ -119,6 +121,7 @@ A portable project file never contains:
 - the whole internal project registry
 - unrelated imported mockups
 - unrelated custom themes
+- unrelated library elements, previous-package backups, compiled artifacts, or execution approval
 - transient Preview navigation: `pageIndex`, `activeSectionId`, and `scrollTop`
 
 Transient navigation is reset to the beginning when a project is duplicated or imported.
@@ -127,7 +130,9 @@ Transient navigation is reset to the beginning when a project is duplicated or i
 
 Imported JSON is parsed as `unknown` and checked before it reaches the project store. Validation covers the discriminator, schema version, IDs, names, vault-relative folder path, metadata, design and Preview values, mockup structure, unsafe HTML, and file/field size limits.
 
-Version 1 project files remain importable. Their legacy `preview.printColorMode` value migrates into `print.imageMode`, and all other print fields receive safe defaults. New exports always use version 2.
+Versions 1 and 2 remain importable. Version 1's legacy `preview.printColorMode` migrates into `print.imageMode`, and other print fields receive safe defaults. Older files need no element assignment or package list. New exports always use version 3.
+
+Optional `design.elements.blockquote` contains `{ elementId, presetId, settingsOverrides }`; settings are deeply cloned scalar data. The `elements` list contains independent library IDs, display metadata, enabled state and the single-file package abstraction. Digest verification is recomputed at import and is not execution approval. Packages are inspected without running code. Identical installed content is reused; other content is installed independently and only imported references are remapped. Existing themes and packages are never silently replaced. Missing packages retain unresolved assignments with warnings/fallback. Approval stays in vault-specific local storage (or the older-host session), outside portable files. See [Element system](ELEMENT_SYSTEM.md).
 
 Paths containing absolute prefixes, backslashes, empty segments, control characters, `.` segments, or `..` traversal are rejected. Unsupported future versions produce an actionable error instead of being reinterpreted.
 

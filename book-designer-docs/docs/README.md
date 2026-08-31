@@ -18,3 +18,5 @@
 14. [`ROADMAP.md`](ROADMAP.md) — implementation phases
 15. [`DEVELOPMENT.md`](DEVELOPMENT.md) — day-to-day workflow
 16. [`DECISIONS.md`](DECISIONS.md) — architecture decision log
+17. [`ELEMENT_SYSTEM.md`](ELEMENT_SYSTEM.md) — library, assignments, compilation and replacement
+18. [`ELEMENT_AUTHORING.md`](ELEMENT_AUTHORING.md) — single-file package contract and authored controls

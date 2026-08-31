@@ -1,5 +1,29 @@
 # Testing Strategy
 
+## Element-system verification
+
+Run `npm test`, `npm run build`, and `npm run lint`. The initial baseline was 54 passing tests and nine existing lint errors in preview/mockup DOM styling. Element changes must not add lint failures. The expanded unit suite covers manifests/settings, unsafe/prototype keys, package limits, local approval, bridge envelopes, parsed CSS and XML output, nested/list quotations, static publication fragments, deep copying, runtime staleness, fallback, closed-project replacement, persistence failures, identity remapping and project migrations.
+
+Run the real Chromium harness with:
+
+```bash
+npx playwright install chromium
+npm run test:browser
+```
+
+It builds with esbuild, serves only loopback test fixtures, and drives the actual React library/theme/preview components through a test-only Obsidian API adapter. It exercises authored controls changing static output, closed-editor compilation, shared imported catalogs, Reset/Apply/Cancel, import/approval, metadata editing, duplicate, disable/enable, protected deletion, global replacement across two saved books, restore/duplicate backup, search, narrow library layout, large reader text, page navigation, and frame cleanup. It verifies output with JavaScript disabled, a real-browser isolation/self-navigation probe, and no forbidden resource requests reaching the loopback server. Screenshots go to ignored `dist/`. This adapter is **not an Obsidian host test**.
+
+### Required manual host matrix (not yet verified)
+
+- Obsidian desktop: verify approved authored controls work and unapproved/disabled output falls back; test the runtime isolation probe and child navigation/resources/forms/workers/popups/download denial under Electron, including a secondary app window.
+- Restart the same vault to check local approval and persisted assignments; import into another vault/device and confirm approval is not transferred. On Obsidian 1.7.2–1.8.6 confirm session-only messaging and approval reset.
+- Open two projects/themes referencing an import; replace while one is closed, preserve values, then restore. Simulate persistence failure and a concurrent registry edit; no partial replacement should be published.
+- Edit/cancel/switch projects while compilation is pending; make live Markdown edits; confirm fallback/diagnostics, nested inline formatting, reader modes and virtualization remain correct.
+- Check narrow panes, keyboard focus, light/dark/custom Obsidian UI themes, large reader sizes, theme changes, pagination, and unload/reload cleanup. Book typography/colors must not inherit UI CSS.
+- Android and iOS: separate device testing is required. No mobile verification has been performed. Browser-compatible APIs alone are not proof of WebView/security/layout compatibility.
+
+Never run an infinite-loop fixture in a live user's vault or claim deadlines can interrupt it. Testing publication fragments is not EPUB/PDF packaging verification.
+
 ## Goals
 
 Book Designer needs tests for both software correctness and rendering stability.

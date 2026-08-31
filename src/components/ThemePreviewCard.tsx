@@ -1,5 +1,5 @@
 import type { Book } from '../core/model/book-model';
-import { renderBookThemeSampleDocument } from '../core/renderer/book-preview-renderer';
+import { CompiledThemePreview } from './elements/ElementServices';
 import type { BookProjectDesign } from '../plugin/project-store';
 import { ObsidianIcon } from './ObsidianIcon';
 
@@ -51,7 +51,7 @@ export function ThemePreviewCard({
 			>
 				<div className="book-designer-theme-preview-frame" aria-hidden="true">
 					{book
-						? <iframe title={`${item.name} theme preview`} srcDoc={renderBookThemeSampleDocument(book, item.design)} sandbox="" tabIndex={-1} />
+						? <CompiledThemePreview title={`${item.name} theme preview`} book={book} design={item.design} />
 						: <div className="book-designer-theme-preview-placeholder"><ObsidianIcon name="book-open" /><span>Open a project to preview its first chapter</span></div>}
 				</div>
 				<span className="book-designer-theme-card-copy">

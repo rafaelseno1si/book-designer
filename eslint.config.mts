@@ -13,6 +13,8 @@ export default defineConfig(
 		'package.json',
 		'package-lock.json',
 		'tsconfig.json',
+		'tests/browser',
+		'vitest.config.mts',
 	]),
 	{
 		languageOptions: {

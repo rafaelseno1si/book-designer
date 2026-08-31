@@ -1,4 +1,8 @@
 import { normalizeDisplayProfile } from '../core/mockups/display-profile';
+import { cloneDesign, parseAssignments, resolveElementSettings, validateSettings } from '../core/elements/settings';
+import { inspectElementPackage } from '../core/elements/manifest';
+import type { ElementLibraryEntry } from '../core/elements/types';
+import { BUILTIN_ELEMENT, cloneEntry, parseLibraryEntry, referencedElementIds } from './elements/library';
 import {
 	normalizeMockupColorConfig,
 	normalizeMockupPostures,
@@ -17,7 +21,7 @@ import type { CustomBookTheme } from './theme-catalog';
 import { normalizePrintSettings, validatePrintSettings } from './print-settings';
 
 export const BOOK_DESIGNER_PROJECT_FORMAT = 'book-designer-project';
-export const BOOK_DESIGNER_PROJECT_FILE_VERSION = 2;
+export const BOOK_DESIGNER_PROJECT_FILE_VERSION = 3;
 export const BOOK_DESIGNER_PROJECT_FILE_EXTENSION = '.book-designer.json';
 export const MAX_PROJECT_FILE_BYTES = 5_000_000;
 
@@ -37,18 +41,21 @@ export interface PortableBookProject extends Omit<BookProject, 'preview'> {
 	preview: DurablePreviewState;
 }
 
-export interface BookDesignerProjectFileV2 {
+export interface BookDesignerProjectFileV3 {
 	format: typeof BOOK_DESIGNER_PROJECT_FORMAT;
 	version: typeof BOOK_DESIGNER_PROJECT_FILE_VERSION;
 	project: PortableBookProject;
 	mockups: ImportedHtmlMockup[];
 	themes: CustomBookTheme[];
+	elements: ElementLibraryEntry[];
 }
 
 export interface ProjectExportSnapshot {
+	warnings?: string[];
 	project: BookProject;
 	mockups: ImportedHtmlMockup[];
 	themes: CustomBookTheme[];
+	elements?: ElementLibraryEntry[];
 }
 
 export class ProjectFileValidationError extends Error {
@@ -65,14 +72,17 @@ export function serializeProjectFile(snapshot: ProjectExportSnapshot): string {
 		.filter((mockup) => referencedIds.has(mockup.id))
 		.map(cloneMockup)
 		.sort((left, right) => left.id.localeCompare(right.id));
-	const file: BookDesignerProjectFileV2 = {
+	const exportedThemes = snapshot.themes.filter((theme) => theme.id === project.design.customThemeId);
+	const elementIds = referencedElementIds(project, exportedThemes);
+	const file: BookDesignerProjectFileV3 = {
 		format: BOOK_DESIGNER_PROJECT_FORMAT,
 		version: BOOK_DESIGNER_PROJECT_FILE_VERSION,
 		project,
 		mockups,
+		elements: (snapshot.elements ?? []).filter((entry) => elementIds.has(entry.id)).map((entry) => { const { previousPackage: _backup, ...portable } = cloneEntry(entry); return portable; }).sort((a, b) => a.id.localeCompare(b.id)),
 		themes: snapshot.themes
 			.filter((theme) => theme.id === project.design.customThemeId)
-			.map((theme) => ({ ...theme, design: { ...theme.design } }))
+			.map((theme) => ({ ...theme, design: cloneDesign(theme.design) }))
 			.sort((left, right) => left.id.localeCompare(right.id)),
 	};
 	const serialized = `${JSON.stringify(file, null, 2)}\n`;
@@ -98,16 +108,17 @@ export function parseProjectFileJson(source: string): ProjectExportSnapshot {
 	if (value.format !== BOOK_DESIGNER_PROJECT_FORMAT) {
 		throw new ProjectFileValidationError(`Expected format "${BOOK_DESIGNER_PROJECT_FORMAT}".`);
 	}
-	if (value.version !== 1 && value.version !== BOOK_DESIGNER_PROJECT_FILE_VERSION) {
+	if (value.version !== 1 && value.version !== 2 && value.version !== BOOK_DESIGNER_PROJECT_FILE_VERSION) {
 		if (typeof value.version === 'number' && value.version > BOOK_DESIGNER_PROJECT_FILE_VERSION) {
 			throw new ProjectFileValidationError(`Project file version ${value.version} is newer than this version of Book Designer supports.`);
 		}
-		throw new ProjectFileValidationError('Only Book Designer project-file versions 1 and 2 are supported.');
+		throw new ProjectFileValidationError('Only Book Designer project-file versions 1, 2 and 3 are supported.');
 	}
 
 	const rawProject = validateProjectShape(value.project, value.version);
 	const rawMockups = validateMockups(value.mockups);
 	const rawThemes = validateThemes(value.themes);
+	const elements = validateElements(value.version === 3 ? value.elements : []);
 	const rawPreview = rawProject.preview;
 	const rawDesign = rawProject.design;
 	if (rawPreview.deviceId === 'imported' && typeof rawPreview.importedMockupId === 'string'
@@ -124,6 +135,7 @@ export function parseProjectFileJson(source: string): ProjectExportSnapshot {
 		activeProjectId: rawProject.id,
 		mockups: rawMockups,
 		themes: rawThemes,
+		elements,
 	}, 'ereader-6');
 	const project = registry.projects[0];
 	if (!project) throw new ProjectFileValidationError('The project configuration could not be normalized safely.');
@@ -131,11 +143,26 @@ export function parseProjectFileJson(source: string): ProjectExportSnapshot {
 	project.source.path = normalizePortableVaultPath(project.source.path);
 	project.preview = { ...project.preview, pageIndex: 0, activeSectionId: null, scrollTop: 0 };
 	const referencedIds = referencedMockupIds(project.preview);
+	const themes = registry.themes.filter((theme) => theme.id === project.design.customThemeId);
+	const warnings: string[] = [];
+	for (const design of [project.design, ...themes.map((theme) => theme.design)]) {
+		const assignment = design.elements?.blockquote;
+		const entry = assignment ? [BUILTIN_ELEMENT, ...elements].find((entry) => entry.id === assignment.elementId) : null;
+		if (assignment && entry) {
+			const manifest = inspectElementPackage(entry.package).manifest;
+			validateSettings(assignment.settingsOverrides, manifest.settingsSchema, true);
+			if (manifest.presets.some((preset) => preset.id === assignment.presetId)) resolveElementSettings(manifest, assignment);
+			else warnings.push(`Preset “${assignment.presetId}” is missing from “${entry.name}”. The assignment is retained with standard blockquote fallback.`);
+		}
+	}
+	const elementIds = referencedElementIds(project, themes);
 	return {
 		project,
+		...(warnings.length ? { warnings: [...new Set(warnings)] } : {}),
+		elements: elements.filter((entry) => elementIds.has(entry.id)),
 		mockups: registry.mockups.filter((mockup) => referencedIds.has(mockup.id)).map(cloneMockup),
 		themes: project.design.customThemeId
-			? registry.themes.filter((theme) => theme.id === project.design.customThemeId).map((theme) => ({ ...theme, design: { ...theme.design } }))
+			? registry.themes.filter((theme) => theme.id === project.design.customThemeId).map((theme) => ({ ...theme, design: cloneDesign(theme.design) }))
 			: [],
 	};
 }
@@ -267,7 +294,20 @@ function validateThemes(value: unknown): unknown[] {
 	return value;
 }
 
+function validateElements(value: unknown): ElementLibraryEntry[] {
+	if (!Array.isArray(value) || value.length > 32) throw new ProjectFileValidationError('The elements field must contain at most 32 packages.');
+	const seen = new Set<string>();
+	return value.map((raw: unknown) => {
+		const entry = parseLibraryEntry(raw);
+		if (seen.has(entry.id)) throw new ProjectFileValidationError(`Duplicate element ID: ${entry.id}.`);
+		seen.add(entry.id);
+		delete entry.previousPackage;
+		return entry;
+	});
+}
+
 function validateDesignShape(design: Record<string, unknown>): void {
+	parseAssignments(design.elements);
 	if (typeof design.themeId !== 'string' || !isThemeId(design.themeId)
 		|| typeof design.typographyScale !== 'string' || !isTypographyScale(design.typographyScale)
 		|| typeof design.chapterStyleId !== 'string' || !isChapterStyleId(design.chapterStyleId)
@@ -285,7 +325,7 @@ function portableProject(project: BookProject): PortableBookProject {
 		name: project.name,
 		source: { ...project.source },
 		metadata: { ...project.metadata },
-		design: { ...project.design },
+		design: cloneDesign(project.design),
 		print: { ...project.print },
 		preview: {
 			...durablePreview,

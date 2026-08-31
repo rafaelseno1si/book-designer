@@ -12,8 +12,9 @@ export function promptForText(
 	label: string,
 	initialValue: string,
 	submitLabel: string,
+	allowEmpty = false,
 ): Promise<string | null> {
-	return new Promise((resolve) => new TextPromptModal(app, title, label, initialValue, submitLabel, resolve).open());
+	return new Promise((resolve) => new TextPromptModal(app, title, label, initialValue, submitLabel, resolve, allowEmpty).open());
 }
 
 export function confirmProjectAction(
@@ -75,6 +76,7 @@ class TextPromptModal extends Modal {
 		private readonly initialValue: string,
 		private readonly submitLabel: string,
 		private readonly resolve: (value: string | null) => void,
+		private readonly allowEmpty = false,
 	) {
 		super(app);
 	}
@@ -85,7 +87,7 @@ class TextPromptModal extends Modal {
 		const field = form.createEl('label');
 		field.createSpan({ text: this.label });
 		const input = field.createEl('input', { type: 'text', value: this.initialValue });
-		input.required = true;
+		input.required = !this.allowEmpty;
 		const error = form.createEl('p', { cls: 'book-designer-prompt-error' });
 		error.setAttr('role', 'alert');
 		const actions = form.createDiv({ cls: 'modal-button-container' });
@@ -95,7 +97,7 @@ class TextPromptModal extends Modal {
 		form.addEventListener('submit', (event) => {
 			event.preventDefault();
 			const value = input.value.trim();
-			if (!value) {
+			if (!value && !this.allowEmpty) {
 				error.setText(`${this.label} cannot be blank.`);
 				input.focus();
 				return;
